@@ -29,7 +29,7 @@ Switch browser tabs, scroll, navigate Bambu Studio, control media apps like Spot
 - Integrated USB-C charging and a snap-in power switch, with a [Type-C USB 5V 2A boost converter step-up power module](https://link.amazon/B01md2LDM)
 - Precision 46.2 mm opening for the [1.28" ESP32-S3 round knob touch display](https://link.amazon/B03kXB6wJ)
 - [Four M3x16 screws](https://link.amazon/B0aCaM2bR) for secure assembly. Heat-set inserts are optional and can be installed with a [soldering iron with a heat-set insert tool](https://link.amazon/B0j9AnaSR)
-- Support-free printing with both parts oriented flat on the build plate
+- Easy printing with both parts oriented flat on the build plate (tree supports, everywhere)
 - Compact, minimalist aesthetic that looks at home on any desk setup
 
 Printed on a [Bambu A1 mini](https://link.amazon/B0hqkkMkx) in [black](https://link.amazon/B0hBDP492) and [grey](https://link.amazon/B08KjhbuN) PLA+, the Smart Puck is designed to be as easy to build as it is satisfying to use.
