@@ -1,0 +1,1935 @@
+<meta charset="utf-8">
+<title>Puck Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: workbench. Mode list on the left, the puck and your computer in the middle, the selected mode's settings on the right. */
+:root {
+  --bg: #e9ecef;
+  --panel: #f7f8f9;
+  --fg: #16191d;
+  --muted: #5b626c;
+  --line: #d3d8de;
+  --accent: #1d6a86;
+  --accent-soft: #d5e7ee;
+  --live: #e5484d;
+  --shell: #1c1f23;
+  --easy: #2f8a55;
+  --mod: #a8710c;
+  --display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+  --body: 'Instrument Sans', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111418; --panel: #181c21; --fg: #e7eaee; --muted: #98a0aa; --line: #2a3038;
+    --accent: #6cb8d4; --accent-soft: #1b3440; --live: #ff5c61; --shell: #0a0c0e; --easy: #5fcf8e; --mod: #e0a847; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111418; --panel: #181c21; --fg: #e7eaee; --muted: #98a0aa; --line: #2a3038;
+  --accent: #6cb8d4; --accent-soft: #1b3440; --live: #ff5c61; --shell: #0a0c0e; --easy: #5fcf8e; --mod: #e0a847; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
+.wrap { max-width: 1440px; margin: 0 auto; padding-inline: 20px; padding-block: 24px 56px; }
+header h1 { font: 700 clamp(26px, 3.4vw, 36px)/1.1 var(--display); margin: 0 0 6px; letter-spacing: -0.01em; }
+header p { margin: 0; color: var(--muted); max-width: 80ch; }
+.eyebrow { font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+
+.shell { display: grid; grid-template-columns: 230px minmax(0, 1fr) 390px; gap: 20px; margin-top: 24px; align-items: start; }
+@media (max-width: 1200px) { .shell { grid-template-columns: 210px minmax(0, 1fr); } .editor { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .shell { grid-template-columns: minmax(0, 1fr); } }
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+.card h2 { font: 600 17px/1.2 var(--display); margin: 0 0 4px; }
+.card .sub { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+
+/* Mode list */
+.nav { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); display: flex; flex-direction: column; gap: 4px; padding: 12px; }
+@media (max-width: 760px) { .nav { position: static; } }
+.nav h3 { font: 500 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 10px 6px 4px; }
+.nav h3:first-child { margin-top: 2px; }
+.navitem { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center; text-align: left; width: 100%; border: 1px solid transparent; background: transparent; padding: 8px; border-radius: 8px; }
+.navitem:hover { border-color: var(--line); }
+.navitem[aria-current="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.navitem .dot { width: 10px; height: 10px; border-radius: 50%; }
+.navitem .txt { min-width: 0; display: flex; flex-direction: column; }
+.navitem .txt b { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.navitem .txt span { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.onpuck { font: 500 10px var(--mono); color: var(--accent); letter-spacing: .06em; text-transform: uppercase; }
+.newbtn { margin-top: 8px; border-style: dashed; }
+.removed .navitem { opacity: .6; }
+.sync { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.sync .lab { font: 500 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+.banner { border: 1px dashed var(--line); border-radius: 8px; padding: 8px 10px; }
+
+/* Device */
+.main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.device { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.puck { position: relative; width: min(400px, 100%); aspect-ratio: 1; max-width: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
+.puck:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 50%; }
+.ring { position: absolute; inset: 0; border-radius: 50%; cursor: grab;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 58%, rgba(0,0,0,.35) 59%, transparent 61%),
+    repeating-conic-gradient(from 0deg, #3a3f46 0deg 3deg, #25292e 3deg 6deg);
+  box-shadow: 0 18px 40px rgba(0,0,0,.28), inset 0 0 0 2px #50565e; }
+.ring.dragging { cursor: grabbing; }
+.ring::after { content: ""; position: absolute; left: 50%; top: 2.2%; width: 6px; height: 4%; margin-left: -3px; border-radius: 3px; background: #c9ced4; }
+.bezel { position: absolute; inset: 7%; border-radius: 50%; background: var(--shell); box-shadow: inset 0 0 0 3px #000, 0 0 0 2px #444a52; pointer-events: none; }
+#screen { position: absolute; inset: 9%; width: 82%; height: 82%; border-radius: 50%; cursor: pointer; background: #000; }
+.puck.small #screen { image-rendering: pixelated; }
+.puck.small { width: min(351px, 100%); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; font: 500 12px var(--mono); padding: 6px 12px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--fg); }
+.controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+button, select, input, textarea { font: 500 14px var(--body); color: var(--fg); }
+button { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 13px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+:is(button, select, input, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hint { font-size: 13px; color: var(--muted); text-align: center; max-width: 52ch; margin: 0; }
+kbd { font: 500 12px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--panel); }
+
+.hostgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 1000px) { .hostgrid { grid-template-columns: minmax(0, 1fr); } }
+.apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.app { text-align: left; display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; }
+.app b { font-weight: 600; font-size: 13px; }
+.app span { font-size: 11px; color: var(--muted); }
+.app[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.modebar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; font-size: 13px; color: var(--muted); }
+.pill { font: 500 12px var(--mono); padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg); }
+.pill.pinned { border-color: var(--live); color: var(--live); }
+.log { font: 12px/1.5 var(--mono); height: 250px; overflow: auto; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.log li { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 8px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+.log .dir { color: var(--muted); }
+.log .up { color: var(--accent); }
+.log code { overflow-wrap: anywhere; }
+
+/* Editor */
+.editor { display: flex; flex-direction: column; gap: 18px; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field > label, .lab { font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+input[type="text"], input[type="number"], select, textarea { width: 100%; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; }
+textarea { font: 13px/1.5 var(--mono); resize: vertical; }
+.namerow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.swatches { display: flex; gap: 6px; }
+.sw { width: 26px; height: 26px; border-radius: 50%; padding: 0; border: 2px solid transparent; }
+.sw[aria-pressed="true"] { border-color: var(--fg); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.layer { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.layerhead { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.layerhead .n { font: 500 11px var(--mono); color: var(--muted); }
+.act { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 6px 8px; align-items: center; font-size: 13px; }
+.act .arg { grid-column: 2; }
+.small { font-size: 12px; padding: 4px 10px; }
+.note { font-size: 13px; color: var(--muted); margin: 0; }
+.svc { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
+.svc .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.svc b { font-family: var(--display); font-size: 15px; }
+.svc .route { font: 12px var(--mono); color: var(--accent); }
+.svc p { margin: 0; font-size: 13px; color: var(--muted); }
+.lvl { font: 500 11px var(--mono); padding: 1px 7px; border-radius: 999px; white-space: nowrap; border: 1px solid currentColor; }
+.easy { color: var(--easy); } .mod { color: var(--mod); } .hard { color: var(--live); }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+.danger { color: var(--live); }
+.toast { font-size: 13px; color: var(--accent); min-height: 1.2em; margin: 0; }
+
+/* Notes */
+.notes { margin-top: 40px; display: grid; gap: 28px; }
+.notes h2 { font: 700 22px/1.2 var(--display); margin: 0 0 10px; }
+.notes p { max-width: 72ch; margin: 0 0 10px; }
+.stack { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr); gap: 10px; align-items: stretch; margin: 14px 0; }
+.stack .box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; font-size: 14px; }
+.stack .box b { display: block; font-family: var(--display); font-size: 16px; margin-bottom: 4px; }
+.stack .arrow { align-self: center; font: 500 13px var(--mono); color: var(--accent); text-align: center; }
+@media (max-width: 760px) { .stack { grid-template-columns: minmax(0,1fr); } }
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Smart Puck · 1.28″ 240 × 240 round · ESP32-S3</div>
+    <h1>Puck Simulator</h1>
+    <p>Pick a mode on the left to see it on the puck and change what it does. Each turn and press can send a keyboard shortcut, go through the companion app on your computer, or reach a service like Spotify or Home Assistant. Your changes stay in this browser. Use Copy settings to export them as a lineup for the puck (firmware/tools/send_modes.py).</p>
+  </header>
+
+  <div class="shell">
+    <nav class="card nav" id="nav" aria-label="Modes"></nav>
+
+    <div class="main">
+      <div class="card device">
+        <div class="puck" id="puck" tabindex="0" aria-label="Puck. Arrow keys turn the dial, Enter presses, H holds.">
+          <div class="ring" id="ring"></div>
+          <div class="bezel"></div>
+          <canvas id="screen" width="412" height="412"></canvas>
+        </div>
+        <div class="controls">
+          <button id="bL" type="button">Turn left</button>
+          <button id="bP" type="button">Press</button>
+          <button id="bR" type="button">Turn right</button>
+          <button id="bD" type="button">Double press</button>
+          <button id="bH" type="button">Hold</button>
+        </div>
+        <div class="seg" role="group" aria-label="Screen">
+          <button type="button" data-panel="240">1.28″ · 240 × 240</button>
+          <button type="button" data-panel="412">1.46″ · 412 × 412</button>
+        </div>
+        <p class="hint" id="panelNote" hidden>The 1.28″ knob display, the current target. Screens are drawn at its real 240 × 240 pixels and about 12% smaller than the 1.46″. Text is kept at 11 px or larger, so labels that get cut off with … are the spots that need a redesign for the small screen.</p>
+        <p class="hint">Drag the knurled ring or scroll over the puck to turn it. Click the screen to press; hold it to open the mode menu on the puck. Keys: <kbd>←</kbd> <kbd>→</kbd> turn, <kbd>Enter</kbd> press (twice quickly for a double press, or <kbd>D</kbd>), <kbd>H</kbd> hold.</p>
+      </div>
+      <div class="hostgrid">
+        <div class="card">
+          <h2>Your computer</h2>
+          <p class="sub">Bring an app to the front. While you're using the computer the puck shows Sidekick and the dial works the app; when the computer is away it goes back to Home.</p>
+          <div class="apps" id="apps"></div>
+          <p class="sub" style="margin-top:12px">Things the puck watches itself. When one changes and you're in another mode, it pops up over whatever is on screen.</p>
+          <div class="apps" id="events"></div>
+          <p class="sub" style="margin-top:12px">Startup animation ideas. The puck plays one each time it powers on, then fades into Home. Click one to replay it; the last one you play is the one it would use. Turning or pressing skips it.</p>
+          <div class="apps" id="boots"></div>
+          <div class="modebar">On the puck <span class="pill" id="modePill">Home</span> <span class="pill" id="autoPill">Auto</span></div>
+        </div>
+        <div class="card">
+          <h2>What the puck sends</h2>
+          <p class="sub">Each event and the route it takes. Newest first.</p>
+          <ul class="log" id="log"></ul>
+        </div>
+      </div>
+    </div>
+
+    <aside class="card editor" id="editor" aria-label="Mode settings"></aside>
+  </div>
+
+  <section class="notes">
+    <div>
+      <h2>How the dial follows your screen</h2>
+      <p>The puck can't see your monitor, so a small companion app on your computer checks which window is in front and tells the puck. The puck draws that mode's screen and sends back every turn and press. Some actions need no computer at all: keyboard shortcuts go straight over USB, and Wi-Fi services like Home Assistant are called by the puck itself.</p>
+      <div class="stack">
+        <div class="box"><b>Companion app</b>Tray app on Windows or macOS. Watches the front window, mutes the mic, and talks to services that need your account, like Spotify, Slack and OBS.</div>
+        <div class="arrow">USB ⇄</div>
+        <div class="box"><b>USB link</b>The ESP32-S3 appears as a serial port for messages and as a keyboard with media keys, so shortcuts and volume work with no app installed.</div>
+        <div class="arrow">⇄ dial</div>
+        <div class="box"><b>Puck firmware</b>Reads the dial, draws screens with LVGL, and keeps each mode's settings. It can also reach Wi-Fi services directly.</div>
+      </div>
+    </div>
+    <div>
+      <h2>How hard is each part</h2>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Part</th><th>What it takes</th><th>Difficulty</th></tr></thead>
+          <tbody>
+            <tr><td>Volume, media keys, shortcuts</td><td>The S3's native USB lets it act as a keyboard (TinyUSB). No companion app needed.</td><td><span class="lvl easy">Easy</span></td></tr>
+            <tr><td>Screens and dial</td><td>Waveshare's LVGL demo for this board, plus an encoder driver and one screen per template.</td><td><span class="lvl mod">Moderate</span></td></tr>
+            <tr><td>Knowing which app is in front</td><td>Small tray app in Python or Node. macOS asks for permission to read window titles.</td><td><span class="lvl mod">Moderate</span></td></tr>
+            <tr><td>Red ring that is always right</td><td>Most call apps don't report mute state, so the companion mutes the system mic and the puck stays the source of truth.</td><td><span class="lvl hard">Hard</span></td></tr>
+            <tr><td>Services with accounts</td><td>Spotify, Slack and OBS each need a one-time sign-in or token in the companion app.</td><td><span class="lvl mod">Moderate</span></td></tr>
+            <tr><td>Going wireless</td><td>Bluetooth keyboard mode, battery, charging and sleep. Better left for version two.</td><td><span class="lvl hard">Hard</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ======================= Services: every place a turn or press can go ======================= */
+// actions: id -> [label, needsArg, placeholder]
+const SERVICES = {
+  puck: { name: 'Puck only', tag: 'puck', route: 'Stays on the puck', lvl: 'easy',
+    how: 'Only changes what the puck shows. Nothing is sent.',
+    actions: { none: ['Nothing'], cycle: ['Next layer'], menu: ['Open the mode menu (turn to choose)'], face_next: ['Next watch face'], face_prev: ['Previous watch face'], wifi_reset: ['Set up Wi-Fi again'] } },
+  usb: { name: 'USB keyboard', tag: 'USB key', route: 'Puck → USB keyboard', lvl: 'easy',
+    how: 'The puck types like a keyboard with media keys. Works on any computer with nothing installed.',
+    actions: { volume_up: ['Volume up'], volume_down: ['Volume down'], mute: ['Mute speakers'], play_pause: ['Play / pause'], next: ['Next track'], prev: ['Previous track'], scroll_up: ['Scroll up'], scroll_down: ['Scroll down'], key: ['Press keys', 1, 'ctrl+z'] } },
+  companion: { name: 'Companion app', tag: 'companion', route: 'Puck → USB serial → companion app', lvl: 'mod',
+    how: 'A tray app on your computer handles what a keyboard cannot: muting the mic, switching windows, running scripts.',
+    actions: { bambu_view_x: ['Tilt the Bambu Studio build plate view (X axis)', 1, '5'], bambu_view_z: ['Spin the Bambu Studio build plate view (Z axis)', 1, '5'], mic_toggle: ['Toggle mic mute'], call_vol_up: ['Call volume up'], call_vol_down: ['Call volume down'], window_next: ['Next window'], window_prev: ['Previous window'], window_focus: ['Focus selected window'], open: ['Open app', 1, 'Figma'], run: ['Run script', 1, '~/scripts/desk.sh'] } },
+  spotify: { name: 'Spotify', tag: 'Spotify', route: 'Puck → Wi-Fi → Spotify Web API', lvl: 'mod',
+    how: 'Link the puck to your Spotify account once (spotify_link.py). It then reads what\'s playing on any of your devices, phone, laptop or speaker, straight over Wi-Fi, even with the computer off. Reading works on any account; play/pause, skip and volume need Premium.',
+    actions: { play_pause: ['Play / pause'], next: ['Next song'], prev: ['Previous song'], vol_up: ['Volume up'], vol_down: ['Volume down'], like: ['Save current song'] } },
+  homekit: { name: 'Apple Home', tag: 'HomeKit', route: 'Puck → Wi-Fi → Home hub → your accessories', lvl: 'mod',
+    how: 'The puck joins Apple Home as a set of buttons, one per item in the list. In the Home app you choose what each button does (for example toggle a light or run a scene), and your Home hub (HomePod, Apple TV or iPad) runs it. Home stays the one place lights are controlled, so nothing gets out of sync. Buttons only: HomeKit cannot pass a dial position, so no turn-to-dim.',
+    actions: { button: ['Home button'] } },
+  lifx: { name: 'LIFX', tag: 'Wi-Fi', route: 'Puck → Wi-Fi → LIFX bulbs (LAN)', lvl: 'easy',
+    how: 'The puck finds your LIFX bulbs on your Wi-Fi and talks to them directly (LIFX LAN protocol), so dimming follows the dial with no lag, no account and no computer. The lights stay in Apple Home for Siri and scenes. Target a LIFX group or a bulb name, or "all".',
+    actions: { bright_up: ['Brighter', 1, 'Office'], bright_down: ['Dimmer', 1, 'Office'], toggle: ['Toggle on / off', 1, 'Office'], warmer: ['Warmer', 1, 'Office'], cooler: ['Cooler', 1, 'Office'] } },
+  homeassistant: { name: 'Home Assistant', tag: 'Wi-Fi', route: 'Puck → Wi-Fi → Home Assistant', lvl: 'mod',
+    how: 'The puck calls Home Assistant directly with an access token, so it works even when the computer is off.',
+    actions: { bright_up: ['Brightness up', 1, 'light.desk'], bright_down: ['Brightness down', 1, 'light.desk'], toggle: ['Toggle', 1, 'light.desk'], scene: ['Run scene', 1, 'scene.movie_night'] } },
+  hue: { name: 'Philips Hue', tag: 'Wi-Fi', route: 'Puck → Wi-Fi → Hue Bridge', lvl: 'mod',
+    how: 'Uses the Hue Bridge on your network. Pair once by pressing the button on the bridge.',
+    actions: { bright_up: ['Brightness up', 1, 'Desk lamp'], bright_down: ['Brightness down', 1, 'Desk lamp'], toggle: ['Toggle', 1, 'Desk lamp'] } },
+  slack: { name: 'Slack', tag: 'Slack', route: 'Puck → companion → Slack API', lvl: 'mod',
+    how: 'The companion uses a Slack app token to read unread counts and set your status.',
+    actions: { open_unread: ['Open selected channel'], mark_read: ['Mark all read'], status: ['Set status', 1, 'Focusing'] } },
+  obs: { name: 'OBS Studio', tag: 'OBS', route: 'Puck → companion → OBS WebSocket', lvl: 'easy',
+    how: 'OBS has a built-in WebSocket server for switching scenes, muting sources and recording.',
+    actions: { scene_next: ['Next scene'], scene_prev: ['Previous scene'], record: ['Start / stop recording'], mute_source: ['Mute source', 1, 'Mic/Aux'] } },
+  robotarm: { name: 'Robot arm', tag: 'Wi-Fi', route: 'Puck → Wi-Fi → arm controller', lvl: 'mod',
+    how: 'The puck sends each move straight to the arm\'s controller as a short message over Wi-Fi (WebSocket or HTTP). Works with an ESP32 or Arduino arm on Wi-Fi, or a Raspberry Pi running ROS through a small bridge. Joint limits are checked on the puck before anything is sent.',
+    actions: { jog_minus: ['Move joint −', 1, 'shoulder'], jog_plus: ['Move joint +', 1, 'shoulder'], grip_open: ['Open gripper'], grip_close: ['Close gripper'], home: ['Go to home pose'], save_pose: ['Save pose', 1, 'pick'], play_pose: ['Move to pose', 1, 'pick'], stop: ['Stop all motors'] } },
+  bambu: { name: 'Bambu printer', tag: 'Wi-Fi', route: 'Puck → Wi-Fi → printer (local MQTT)', lvl: 'mod',
+    how: 'Reads print status straight from the printer on your network, using its IP, serial number and LAN access code. Status reading works with the access code; controls like the light or pause may need LAN Only and Developer Mode on recent firmware.',
+    actions: { light: ['Toggle chamber light'], pause: ['Pause print'], resume: ['Resume print'], speed_up: ['Faster speed profile'], speed_down: ['Slower speed profile'] } },
+  mqtt: { name: 'MQTT', tag: 'Wi-Fi', route: 'Puck → Wi-Fi → MQTT broker', lvl: 'easy',
+    how: 'Publishes to a topic on an MQTT broker. Many DIY devices, Home Assistant and Node-RED already listen there.',
+    actions: { publish: ['Publish to topic', 1, 'puck/dial'] } },
+  webhook: { name: 'Webhook', tag: 'Wi-Fi', route: 'Puck → Wi-Fi → any URL', lvl: 'easy',
+    how: 'Sends a small JSON message to any URL, such as Zapier, n8n, IFTTT or your own server.',
+    actions: { post: ['Send to URL', 1, 'https://hooks.zapier.com/…'] } }
+};
+const LVL = { easy: 'Easy', mod: 'Moderate', hard: 'Hard' };
+const actInfo = act => { const [s, a] = (act || 'puck.none').split('.'); return { svc: SERVICES[s] || SERVICES.puck, info: (SERVICES[s] && SERVICES[s].actions[a]) || ['Nothing'] }; };
+
+/* ======================= Apps the "computer" can bring to the front ======================= */
+const APPS = [
+  { id: 'desktop', label: 'Computer away', sub: 'Locked, asleep or idle 2 min' },
+  { id: 'zoom', label: 'Zoom', sub: 'Design review' },
+  { id: 'meet', label: 'Google Meet', sub: 'Chrome · Standup' },
+  { id: 'vscode', label: 'VS Code', sub: 'encoder.c' },
+  { id: 'word', label: 'Word', sub: 'Puck notes.docx' },
+  { id: 'spotify', label: 'Spotify', sub: 'Midnight City', track: 'Midnight City', artist: 'M83' },
+  { id: 'premiere', label: 'Premiere Pro', sub: 'teaser.prproj' },
+  { id: 'figma', label: 'Figma', sub: 'Puck UI' },
+  { id: 'powerpoint', label: 'PowerPoint', sub: 'Puck pitch.pptx' },
+  { id: 'slack', label: 'Slack', sub: '17 unread' },
+  { id: 'obs', label: 'OBS Studio', sub: 'Stream setup' },
+  { id: 'bambustudio', label: 'Bambu Studio', sub: 'puck_dial_ring.3mf' },
+  { id: 'chrome', label: 'Chrome', sub: 'Article · The Verge', focus: 'page' },
+  { id: 'wordtext', label: 'Word', sub: 'Cursor in the text', text: 'Puck notes: the dial moves your cursor through the words' },
+  { id: 'slacktext', label: 'Slack', sub: 'Typing a message', text: 'running late, grabbing coffee first' },
+  { id: 'bambuview', label: 'Bambu Studio', sub: '3D view open', view3d: true },
+  { id: 'youtube', label: 'Chrome', sub: 'YouTube · lo-fi beats', focus: 'video' }
+];
+
+/* ======================= Default modes (all editable) ======================= */
+const B = (act, arg) => arg ? { act, arg } : { act };
+const L = (name, left, right) => ({ name, left, right });
+const DEFAULT_MODES = [
+  { id: 'idle', name: 'Home', builtin: true, template: 'idle', color: '#8a94a3', triggers: ['desktop'],
+    layers: [L('Modes', B('puck.menu'), B('puck.menu'))], press: B('puck.none') },
+  { id: 'sidekick', name: 'Sidekick', builtin: true, template: 'sidekick', color: '#7dd3fc', triggers: ['*'],
+    layers: [L('Tools', B('puck.none'), B('puck.none'))], press: B('puck.none') },
+  { id: 'calls', name: 'Calls', off: true, builtin: true, template: 'calls', color: '#ff3b3f', triggers: ['zoom', 'meet', 'teams'],
+    layers: [L('Call volume', B('companion.call_vol_down'), B('companion.call_vol_up'))], press: B('companion.mic_toggle') },
+  { id: 'typing', off: true, name: 'Typing', builtin: true, template: 'typing', color: '#4fb3d9', triggers: ['vscode', 'word'],
+    layers: [L('Scroll', B('usb.scroll_up'), B('usb.scroll_down')), L('Word jump', B('usb.key', 'ctrl+left'), B('usb.key', 'ctrl+right')), L('Undo / redo', B('usb.key', 'ctrl+z'), B('usb.key', 'ctrl+y'))],
+    press: B('puck.cycle') },
+  { id: 'media', name: 'Media', builtin: true, template: 'media', color: '#39d98a', triggers: [],
+    layers: [L('Volume', B('spotify.vol_down'), B('spotify.vol_up'))], press: B('spotify.play_pause') },
+  { id: 'editing', off: true, name: 'Video editing', builtin: true, template: 'editing', color: '#ffb547', triggers: ['premiere'],
+    layers: [L('Frame', B('usb.key', 'left'), B('usb.key', 'right')), L('Second', B('usb.key', 'shift+left'), B('usb.key', 'shift+right')), L('Edit point', B('usb.key', 'up'), B('usb.key', 'down'))],
+    press: B('puck.cycle') },
+  { id: 'settings', name: 'Settings', builtin: true, template: 'settings', color: '#94a3b8', triggers: [],
+    settings: { brightness: 80, glow: 1 }, layers: [L('Items', B('puck.none'), B('puck.none'))], press: B('puck.none') },
+  { id: 'design', off: true, name: 'Design zoom', template: 'value', color: '#a78bfa', triggers: ['figma'],
+    settings: { min: 10, max: 800, step: 10, unit: '%', value: 100 },
+    layers: [L('Zoom', B('usb.key', 'ctrl+-'), B('usb.key', 'ctrl+='))], press: B('usb.key', 'shift+2') },
+  { id: 'present', off: true, name: 'Presenting', template: 'list', color: '#f472b6', triggers: ['powerpoint'],
+    settings: { items: ['Title', 'Why a puck', 'Hardware', 'Modes', 'Demo', 'Questions'] },
+    layers: [L('Slides', B('usb.key', 'left'), B('usb.key', 'right'))], press: B('usb.key', 'b') },
+  { id: 'focus', name: 'Focus timer', template: 'timer', color: '#fb923c', triggers: [],
+    settings: { minutes: 25 },
+    layers: [L('Set time', B('puck.none'), B('puck.none'))], press: B('slack.status', 'Focusing') },
+  { id: 'windows', off: true, name: 'Window switcher', template: 'list', color: '#60a5fa', triggers: [],
+    settings: { items: ['Chrome · Gmail', 'VS Code · encoder.c', 'Zoom', 'Spotify', 'Figma · Puck UI'] },
+    layers: [L('Windows', B('companion.window_prev'), B('companion.window_next'))], press: B('companion.window_focus') },
+  { id: 'unread', off: true, name: 'Slack unread', template: 'list', color: '#e879f9', triggers: ['slack'],
+    settings: { items: ['#hardware · 4', '#general · 12', 'Direct messages · 1'] },
+    layers: [L('Channels', B('puck.none'), B('puck.none'))], press: B('slack.open_unread') },
+  { id: 'lights', name: 'Lights', template: 'list', color: '#facc15', triggers: [],
+    settings: { items: ['Light 1', 'Light 2', 'Light 3', 'All lights'] },
+    layers: [L('Lights', B('puck.none'), B('puck.none'))], press: B('homekit.button') },
+  { id: 'arm', name: 'Robot arm', template: 'arm', color: '#fb7185', triggers: [],
+    settings: { step: 5, host: 'arm.local' },
+    layers: [L('Base', B('robotarm.jog_minus', 'base'), B('robotarm.jog_plus', 'base')), L('Shoulder', B('robotarm.jog_minus', 'shoulder'), B('robotarm.jog_plus', 'shoulder')),
+      L('Elbow', B('robotarm.jog_minus', 'elbow'), B('robotarm.jog_plus', 'elbow')), L('Wrist', B('robotarm.jog_minus', 'wrist'), B('robotarm.jog_plus', 'wrist')),
+      L('Roll', B('robotarm.jog_minus', 'roll'), B('robotarm.jog_plus', 'roll')), L('Gripper', B('robotarm.grip_close'), B('robotarm.grip_open'))],
+    press: B('puck.cycle') },
+  { id: 'faces', name: 'Watch faces', template: 'clock', color: '#d6b36a', triggers: [],
+    settings: { face: 0, faceSet: 3 }, layers: [L('Faces', B('puck.none'), B('puck.none'))], press: B('puck.none') },
+  { id: 'printer', name: '3D printer', template: 'printer', color: '#34d399', triggers: ['bambustudio'],
+    settings: { printer: 'Bambu A1 mini', file: 'puck_dial_ring.3mf', hours: 2.9, layers: 412 },
+    layers: [L('Pages', B('puck.none'), B('puck.none'))], press: B('puck.none') },
+  { id: 'stream', off: true, name: 'Streaming', template: 'list', color: '#2dd4bf', triggers: ['obs'],
+    settings: { items: ['Camera', 'Screen share', 'Be right back'] },
+    layers: [L('Scenes', B('obs.scene_prev'), B('obs.scene_next'))], press: B('obs.record') }
+];
+const TEMPLATE_DEFAULTS = { value: { min: 0, max: 100, step: 5, unit: '%', value: 50 }, list: { items: ['First', 'Second', 'Third'] }, timer: { minutes: 25 }, arm: { step: 5, host: 'arm.local' }, clock: { face: 0, faceSet: 3 }, printer: { printer: 'Bambu P1S', file: 'print.3mf', hours: 2, layers: 300 } };
+const COLORS = ['#4fb3d9', '#39d98a', '#ffb547', '#ff3b3f', '#a78bfa', '#f472b6', '#facc15', '#2dd4bf'];
+
+/* ======================= Saved settings (this browser only) ======================= */
+const KEY = 'puck-modes-v1';
+function loadModes() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) { const m = JSON.parse(raw); if (Array.isArray(m) && m.length && m.every(x => x.id && x.template && Array.isArray(x.layers) && x.layers.length && x.press)) return m; }
+  } catch (e) {}
+  return JSON.parse(JSON.stringify(DEFAULT_MODES));
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(modes)); localStorage.setItem(KEY + '-seen', JSON.stringify(DEFAULT_MODES.map(m => m.id))); } catch (e) {} }
+let modes = loadModes();
+try { // add modes that shipped after this browser last saved, without bringing back ones the user deleted
+  const seen = JSON.parse(localStorage.getItem(KEY + '-seen') || 'null') || (localStorage.getItem(KEY) ? ['idle','calls','typing','media','editing','design','present','focus','windows','unread','lights','stream'] : null);
+  if (seen) DEFAULT_MODES.forEach(d => { if (!seen.includes(d.id) && !modes.some(m => m.id === d.id)) modes.push(JSON.parse(JSON.stringify(d))); });
+} catch (e) {}
+const byId = id => modes.find(m => m.id === id);
+// The real arm has a wrist Roll joint (added after the first lineups); give saved arm modes that lack it a Roll layer before Gripper.
+function addRoll() {
+  const m = byId('arm'), d = DEFAULT_MODES.find(x => x.id === 'arm');
+  if (!m || m.template !== 'arm' || m.layers.some(l => l.name === 'Roll')) return;
+  const g = m.layers.findIndex(l => l.name === 'Gripper');
+  m.layers.splice(g < 0 ? m.layers.length : g, 0, JSON.parse(JSON.stringify(d.layers.find(l => l.name === 'Roll'))));
+  save();
+}
+addRoll();
+// Desk lights: LIFX bulbs in Apple Home, switched on and off through HomeKit so Home stays in sync.
+// Move a lights mode still on the old Home Assistant placeholder (or the brief LIFX-direct version) to HomeKit buttons.
+function lightsToHomeKit() {
+  const m = byId('lights'), d = DEFAULT_MODES.find(x => x.id === 'lights');
+  if (!m || !m.press || !/^(homeassistant|lifx)\./.test(m.press.act)) return;
+  Object.assign(m, JSON.parse(JSON.stringify({ name: d.name, template: d.template, settings: d.settings, layers: d.layers, press: d.press })));
+  save();
+}
+lightsToHomeKit();
+// Watch faces were cut from 9 to 3 (2026-10-03): 0 Atelier, 1 Stack, 2 Orbit. faceSet: 3 marks settings on this numbering.
+// Remap older saves (no faceSet = the original 9; faceSet 2 = Atelier, Mono, Stack, Orbit); removed faces fall back to Atelier.
+const FACE_REMAPS = { 1: { 0: 0, 3: 1, 8: 2 }, 2: { 0: 0, 2: 1, 3: 2 } };
+function remapFaces() {
+  let changedAny = false;
+  for (const m of modes) {
+    if (!m.settings || !('face' in m.settings) || m.settings.faceSet === 3) continue;
+    const f = +m.settings.face, map = FACE_REMAPS[m.settings.faceSet || 1] || {};
+    m.settings = { ...m.settings, face: f < 0 ? f : (map[f] ?? 0), faceSet: 3 }; changedAny = true;
+  }
+  if (changedAny) save();
+}
+remapFaces();
+// Sidekick (2026-10-03): one adaptive mode replaces the per-app modes. Done once per browser; the folded
+// modes move to "Removed from puck" and can be added back.
+const FOLDED = ['calls', 'typing', 'editing', 'design', 'present', 'windows', 'unread', 'stream'];
+const homeFaces = m => ['puck.face_next', 'puck.menu'].includes(((m.layers[0] || {}).right || {}).act);
+const homeMenu = m => ((m.layers[0] || {}).right || {}).act === 'puck.menu';
+// Turning Home's dial opens the mode menu and the first turn already moves through it. Watch faces are changed in the Watch faces mode. Lineups saved before this are migrated.
+function homeWake() { const m = byId('idle'); const a = ((m && m.layers[0]) || {}).right; if (a && ['puck.face_next', 'puck.wake'].includes(a.act)) { m.layers = [L('Modes', B('puck.menu'), B('puck.menu'))]; save(); } }
+function foldIntoSidekick(force) {
+  let done = null; try { done = localStorage.getItem(KEY + '-sidekick'); } catch (e) {}
+  if (done && !force) return;
+  let sk = byId('sidekick');
+  if (!sk) { sk = JSON.parse(JSON.stringify(DEFAULT_MODES.find(d => d.id === 'sidekick'))); modes.push(sk); }
+  delete sk.off;
+  modes = modes.filter(m => m !== sk); modes.splice(Math.max(0, modes.findIndex(m => m.id === 'idle')) + 1, 0, sk);
+  modes.forEach(m => { if (FOLDED.includes(m.id)) m.off = true; });
+  // Home's turn moves from computer volume to watch faces: volume now lives in Sidekick.
+  const home = byId('idle');
+  if (home && home.layers.length === 1 && (home.layers[0].right || {}).act === 'usb.volume_up' && (home.press || {}).act === 'usb.mute') {
+    home.layers = [L('Modes', B('puck.menu'), B('puck.menu'))]; home.press = B('puck.none');
+  }
+  save(); try { localStorage.setItem(KEY + '-sidekick', '1'); } catch (e) {}
+}
+foldIntoSidekick();
+// Media came back (2026-10-03) as a glance screen you pick from the hold menu; Sidekick still drives the Spotify app.
+function mediaBack() {
+  let done = null; try { done = localStorage.getItem(KEY + '-media-back'); } catch (e) {}
+  const m = byId('media'); if (done || !m) return;
+  delete m.off; m.triggers = m.triggers.filter(t => t !== 'spotify'); save();
+  try { localStorage.setItem(KEY + '-media-back', '1'); } catch (e) {}
+}
+mediaBack();
+// Idle was renamed Home (2026-10-03). The id stays 'idle' so the puck and saved lineups still match.
+function idleToHome() { const m = byId('idle'); if (m && m.name === 'Idle') { m.name = 'Home'; save(); } }
+idleToHome(); homeWake();
+const active = () => modes.filter(m => !m.off);
+
+/* ======================= Screen primitives (map to LVGL: lv_arc, lv_label, circles) ======================= */
+const W = 412, C = W / 2;
+const cv = document.getElementById('screen'), puckEl = document.getElementById('puck');
+const g = cv.getContext('2d');
+// Screens are designed in 412 units and drawn at the chosen panel's real pixel count.
+let PX = 412;
+function setPanel(n) {
+  PX = n; cv.width = n; cv.height = n; g.setTransform(n / W, 0, 0, n / W, 0, 0);
+  puckEl.classList.toggle('small', n === 240);
+  document.querySelectorAll('[data-panel]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.panel === n));
+  document.getElementById('panelNote').hidden = n !== 240;
+  try { localStorage.setItem('puck-panel', n); } catch (e) {}
+}
+// Light glow (Settings): the puck's RGB lights take the screen's main color; here the ring glows in the mode color.
+const glowOn = () => +((((byId('settings') || {}).settings) || {}).glow ?? 1) === 1;
+function applyGlow() {
+  const m = byId(S.mode), r = document.getElementById('ring');
+  if (r) r.style.boxShadow = glowOn() && m ? `0 18px 40px rgba(0,0,0,.28), inset 0 0 0 2px #50565e, 0 0 26px 4px ${m.color}66` : '';
+}
+// Brightness from the Settings mode, shown as a dimmer screen.
+function applyBrightness(b) { cv.style.filter = b >= 100 ? '' : `brightness(${(0.3 + 0.7 * b / 100).toFixed(2)})`; }
+const COL = { white: '#f2f4f7', dim: '#7c8591', faint: '#2a2f36', accent: '#4fb3d9', red: '#ff3b3f', green: '#39d98a', amber: '#ffb547' };
+const rad = d => d * Math.PI / 180;
+function arc(r, w, a0, a1, color, alpha = 1) {
+  g.save(); g.globalAlpha *= alpha; g.strokeStyle = color; g.lineWidth = w; g.lineCap = 'round';
+  g.beginPath(); g.arc(C, C, r, rad(a0), rad(a1)); g.stroke(); g.restore();
+}
+function label(text, y, size, color = COL.white, weight = 600, maxW = 300) {
+  const minPx = 11; if (size * PX / W < minPx) size = minPx * W / PX; // smallest text that stays readable
+  g.fillStyle = color; g.font = `${weight} ${size}px Montserrat, sans-serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  let t = String(text); while (t.length > 1 && g.measureText(t).width > maxW) t = t.slice(0, -2) + '…';
+  g.fillText(t, C, y);
+}
+function valueArc(r, w, pct, color) { arc(r, w, 135, 405, COL.faint); if (pct > 0) arc(r, w, 135, 135 + 270 * pct / 100, color); }
+function dots(n, i, y) {
+  if (n < 2) return;
+  for (let k = 0; k < n; k++) { g.fillStyle = k === i ? COL.white : COL.faint; g.beginPath(); g.arc(C + (k - (n - 1) / 2) * 16, y, 4, 0, Math.PI * 2); g.fill(); }
+}
+function mic(x, y, s, color, slashed) {
+  g.save(); g.strokeStyle = color; g.fillStyle = color; g.lineWidth = 5 * s; g.lineCap = 'round';
+  const w = 22 * s, h = 40 * s;
+  g.beginPath(); g.roundRect(x - w / 2, y - h, w, h, w / 2); g.fill();
+  g.beginPath(); g.arc(x, y - h / 2 + 4 * s, 20 * s, rad(20), rad(160)); g.stroke();
+  g.beginPath(); g.moveTo(x, y + 12 * s); g.lineTo(x, y + 20 * s); g.stroke();
+  if (slashed) {
+    for (const [c, lw] of [['#000', 11], [color, 5]]) { g.strokeStyle = c; g.lineWidth = lw * s; g.beginPath(); g.moveTo(x - 24 * s, y - h - 2 * s); g.lineTo(x + 24 * s, y + 20 * s); g.stroke(); }
+  }
+  g.restore();
+}
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const mmss = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const now = () => performance.now();
+const layerName = (m, s) => (m.layers[s.layer] || m.layers[0]).name;
+const pressLabel = m => m.press.act === 'puck.cycle' ? 'Press for next layer' : 'Press: ' + actInfo(m.press.act).info[0].toLowerCase();
+
+/* ======================= Screen templates: init / rotate / press / draw =======================
+   Each becomes one C file on the device. Built-in templates have custom screens;
+   value, list and timer are generic so new modes need no new drawing code. */
+/* ======================= Watch faces (drawn in 412 units, tested at 240 x 240) ======================= */
+function hand(a, len, w, color, tail = 0) {
+  const r = rad(a - 90), c = Math.cos(r), s = Math.sin(r);
+  g.strokeStyle = color; g.lineWidth = w; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(C - tail * c, C - tail * s); g.lineTo(C + len * c, C + len * s); g.stroke();
+}
+function tick(a, r0, r1, w, color) {
+  const r = rad(a - 90), c = Math.cos(r), s = Math.sin(r);
+  g.strokeStyle = color; g.lineWidth = w; g.lineCap = 'butt';
+  g.beginPath(); g.moveTo(C + r0 * c, C + r0 * s); g.lineTo(C + r1 * c, C + r1 * s); g.stroke();
+}
+function disc(x, y, r, color) { g.fillStyle = color; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+const polar = (a, r) => [C + r * Math.cos(rad(a - 90)), C + r * Math.sin(rad(a - 90))];
+function bg(inner, outer) { const gr = g.createRadialGradient(C, C, 0, C, C, C); gr.addColorStop(0, inner); gr.addColorStop(1, outer); g.fillStyle = gr; g.fillRect(0, 0, W, W); }
+function txt(t, x, y, size, color, weight = 600, spacing = 0) {
+  if (size * PX / W < 11) size = 11 * W / PX;
+  g.fillStyle = color; g.font = `${weight} ${size}px Montserrat, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  if ('letterSpacing' in g) g.letterSpacing = spacing + 'px';
+  g.fillText(t, x, y); if ('letterSpacing' in g) g.letterSpacing = '0px';
+}
+// Every clock on the puck uses the puck's time zone, whatever the viewing computer is set to.
+// The zone is a puck setting kept on Idle (settings.tz), so it goes to the puck with the lineup.
+const TZ_DEFAULT = 'America/Chicago';
+const TZ_CHOICES = [['America/New_York', 'Eastern'], ['America/Chicago', 'Central'], ['America/Denver', 'Mountain'], ['America/Phoenix', 'Arizona'], ['America/Los_Angeles', 'Pacific'], ['America/Anchorage', 'Alaska'], ['Pacific/Honolulu', 'Hawaii'], ['Europe/London', 'London'], ['Europe/Berlin', 'Central Europe'], ['Asia/Tokyo', 'Tokyo'], ['Australia/Sydney', 'Sydney'], ['UTC', 'UTC']];
+let TZ = TZ_DEFAULT, tzFmt = null;
+function setTZ(z) {
+  try { tzFmt = new Intl.DateTimeFormat('en-US', { timeZone: z, hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', weekday: 'short', day: 'numeric' }); TZ = z; }
+  catch (e) { TZ = TZ_DEFAULT; tzFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', weekday: 'short', day: 'numeric' }); }
+}
+setTZ(((byId('idle') || {}).settings || {}).tz || TZ_DEFAULT);
+function clockNow() {
+  const d = new Date(), p = {};
+  tzFmt.formatToParts(d).forEach(x => { p[x.type] = x.value; });
+  const h24 = (+p.hour) % 24, mi = +p.minute, se = +p.second + d.getMilliseconds() / 1000;
+  return { d, h24, h: h24 % 12, mi, se, aS: se * 6, aM: (mi + se / 60) * 6, aH: (h24 % 12 + mi / 60) * 30,
+    hh: String(h24 % 12 || 12), mm: String(mi).padStart(2, '0'), day: p.weekday.toUpperCase(), date: +p.day };
+}
+const FACES = [
+  { name: 'Atelier', draw(t) {
+    bg('#22211f', '#070707');
+    for (let k = 0; k < 60; k++) k % 5 ? tick(k * 6, 184, 196, 2, '#5d5a54') : tick(k * 6, 168, 196, 6, '#d6b36a');
+    [['12', 0], ['3', 90], ['6', 180], ['9', 270]].forEach(([n, a]) => { const [x, y] = polar(a, 138); txt(n, x, y, 34, '#d6b36a', 600); });
+    hand(t.aH, 100, 12, '#d6b36a', 16); hand(t.aM, 152, 8, '#efe6d2', 20); hand(t.aS, 170, 3, '#e5484d', 36);
+    disc(C, C, 9, '#d6b36a'); disc(C, C, 4, '#e5484d');
+  } },
+  { name: 'Stack', draw(t) {
+    bg('#1a1206', '#000');
+    // As big as the round screen allows: two rows, tight spacing.
+    txt(t.hh.padStart(2, '0'), C, C - 80, 176, '#f4efe6', 700, -6);
+    txt(t.mm, C, C + 92, 176, '#ffb547', 700, -6);
+    arc(198, 5, -90, -90 + 360 * t.se / 60, '#ffb547', 0.9);
+  } },
+  { name: 'Orbit', draw(t) {
+    g.fillStyle = '#000'; g.fillRect(0, 0, W, W);
+    // Trails: the sun's (hour) shows how much of the year has passed, the earth's (minute) how much of today.
+    const y0 = new Date(t.d.getFullYear(), 0, 1), y1 = new Date(t.d.getFullYear() + 1, 0, 1);
+    const yearF = (t.d - y0) / (y1 - y0), dayF = (t.h24 * 3600 + t.mi * 60 + t.se) / 86400;
+    [[176, t.aH, 16, '#ffb547', yearF], [124, t.aM, 12, '#60a5fa', dayF], [74, t.aS, 7, '#f2f4f7', 40 / 360]].forEach(([r, a, s, c, f]) => {
+      arc(r, 1.5, 0, 360, '#262a31'); if (f > 0) arc(r, 5, a - 90 - 360 * f, a - 90, c, 0.6);
+      const [x, y] = polar(a, r); const gl = g.createRadialGradient(x, y, 0, x, y, s * 2.4); gl.addColorStop(0, c); gl.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gl; g.fillRect(x - s * 3, y - s * 3, s * 6, s * 6); disc(x, y, s, c);
+    });
+    txt(`${t.hh}:${t.mm}`, C, C + 4, 84, '#f2f4f7', 700, -2);
+  } },
+  // Spotify: a clock with what's playing. The record spins while a song plays and stops on pause;
+  // its label takes the album art's average color. The outer ring is song progress. Nothing playing = record greyed out.
+  // Press on Home with this face = play/pause (Premium). Reads the same Spotify state as the Media mode.
+  { name: 'Spotify', spotify: true, draw(t) {
+    g.fillStyle = '#000'; g.fillRect(0, 0, W, W);
+    const sp = spotifyNow(), on = !!sp.track, col = on ? sp.art : '#3a3f46';
+    arc(198, 6, -90, 270, '#1b1f24'); if (on) arc(198, 6, -90, -90 + 360 * sp.pos / sp.len, '#1ed760');
+    txt(`${t.hh}:${t.mm}`, C, C - 128, 46, '#f2f4f7', 700, -1);
+    const rx = C, ry = C - 4, rr = 84, spin = sp.spin;
+    disc(rx, ry, rr, '#101215');
+    for (let r = 44; r < rr - 3; r += 6) { g.strokeStyle = r % 12 ? '#1c2026' : '#23282f'; g.lineWidth = 1.5; g.beginPath(); g.arc(rx, ry, r, 0, Math.PI * 2); g.stroke(); }
+    g.save(); g.globalAlpha = on ? 0.22 : 0.08; g.strokeStyle = '#ffffff'; g.lineWidth = 10; g.lineCap = 'round';
+    [0, 180].forEach(o => { g.beginPath(); g.arc(rx, ry, rr - 22, rad(spin + o - 20), rad(spin + o + 20)); g.stroke(); });
+    g.restore();
+    disc(rx, ry, 36, col); disc(rx, ry, 5, '#000');
+    { const [x, y] = [rx + 24 * Math.cos(rad(spin)), ry + 24 * Math.sin(rad(spin))]; disc(x, y, 3, 'rgba(0,0,0,.45)'); }
+    if (on && !sp.playing) { g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(rx, ry, rr, 0, Math.PI * 2); g.fill(); g.fillStyle = '#f2f4f7'; g.fillRect(rx - 14, ry - 18, 10, 36); g.fillRect(rx + 4, ry - 18, 10, 36); }
+    label(on ? sp.track : 'Nothing playing', C + 110, 26, on ? '#f2f4f7' : COL.dim, 700, 250);
+    label(on ? (sp.playing ? sp.artist : `Paused · ${sp.artist}`) : 'Spotify', C + 142, 18, on && sp.playing ? COL.dim : on ? COL.amber : '#1ed760', 500, 230);
+  } }
+];
+// Album art colors stand in for the average of Spotify's 64 px cover image (the puck decodes it once per song).
+const ART = { 'Midnight City': '#7c4dff', 'Intro': '#e8e8e8', 'Nightcall': '#ff4f8b', 'Breathe': '#4fb3d9' };
+let SP_FALLBACK = { playing: true, pos: 62, len: 243, track: 'Midnight City', artist: 'M83', last: now() }, spSpin = 0, spLast = now();
+function spotifyNow() {
+  const mm = byId('media'), st = mm ? stateOf(mm) : SP_FALLBACK, t = now();
+  if (st.playing) st.pos = (st.pos + (t - st.last) / 1000) % st.len; st.last = t;
+  if (st.playing) spSpin = (spSpin + (t - spLast) * 0.2) % 360; spLast = t; // 33 rpm is 200 deg/s
+  return { ...st, spin: spSpin, art: ART[st.track] || '#1ed760' };
+}
+
+/* ======================= Live printer status (shared db doc printer/status) ======================= */
+const PRINT_STATES = { RUNNING: 'Printing', PAUSE: 'Paused', FINISH: 'Finished', FAILED: 'Failed', IDLE: 'Idle', PREPARE: 'Preparing', SLICING: 'Preparing' };
+let LIVE = null, LOCAL = null;
+// The PC writes printer/status about every 2 minutes and on each state change, so live data counts as fresh for 5 minutes.
+const seenAt = d => Date.parse(d.read_at || d.updated_at);
+const freshDoc = d => { if (!d || !(d.read_at || d.updated_at)) return false; const age = Date.now() - seenAt(d); return age >= -60000 && age < 300000; };
+function liveStatus() { return freshDoc(LIVE) ? LIVE : freshDoc(LOCAL) ? LOCAL : null; }
+// Second source: printer_bridge.py running on this computer (reads the printer over local MQTT).
+// Mapped into the same shape as the shared doc so both feed one live screen.
+// The published artifact's sandbox blocks requests to any other host (localhost included), so this
+// source only works when the bridge itself serves this page (open http://localhost:8765/).
+const BRIDGE_PAGE = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+async function pollLocal() {
+  if (!BRIDGE_PAGE) return;
+  try {
+    const r = await fetch('/status.json', { cache: 'no-store' });
+    if (!r.ok) return;
+    const v = await r.json();
+    if (v.state === 'OFFLINE' || !v.updated) { LOCAL = null; return; }
+    const was = liveStatus() && liveStatus().gcode_state;
+    LOCAL = { gcode_state: v.state, mc_percent: v.percent, mc_remaining_time: v.remaining_min, subtask_name: v.file,
+      nozzle_temper: v.nozzle, bed_temper: v.bed, layer_num: v.layer, total_layer_num: v.total_layers, updated_at: new Date(v.updated * 1000).toISOString() };
+    if (!freshDoc(LIVE) && was && v.state !== was) printerChanged(v.state, v.file);
+  } catch (e) {}
+}
+pollLocal(); setInterval(pollLocal, 3000);
+// Why the printer screen isn't live, shown after "Simulated ·" so a missing feed is diagnosable.
+let LIVE_WHY = 'connecting';
+(async () => {
+  try {
+    const db = window.claude && await window.claude.use('db');
+    if (!db) { LIVE_WHY = 'no shared data in this view'; return; }
+    LIVE_WHY = 'waiting for PC';
+    const ref = db.doc('printer/status');
+    let lastLogged = null;
+    const take = snap => {
+      const prev = liveStatus(), was = prev && prev.gcode_state;
+      LIVE = snap.exists ? snap.data() : null;
+      const cur = liveStatus();
+      if (!LIVE) LIVE_WHY = 'no data from PC yet';
+      else if (!cur) LIVE_WHY = `PC data ${Math.round((Date.now() - seenAt(LIVE)) / 60000)}m old`;
+      if (!cur) return;
+      const key = `${cur.gcode_state}|${cur.mc_percent}`;
+      if (key !== lastLogged) { lastLogged = key; log('printer → puck', JSON.stringify({ state: cur.gcode_state, percent: cur.mc_percent, left_min: cur.mc_remaining_time })); }
+      // A print starting, pausing, failing or finishing pops up over whatever is on screen.
+      if (was && cur.gcode_state !== was) printerChanged(cur.gcode_state, cur.subtask_name);
+    };
+    // A terminal snapshot error kills the subscription, so note it and subscribe again.
+    const subscribe = () => ref.onSnapshot(take, e => { LIVE_WHY = `data error ${(e && e.code) || ''}`.trim(); setTimeout(subscribe, 15000); });
+    subscribe();
+    // Belt and braces: re-read every 30 s in case the live stream stalls.
+    setInterval(async () => { try { take(await ref.get()); } catch (e) { LIVE_WHY = `data error ${(e && e.code) || ''}`.trim(); } }, 30000);
+  } catch (e) { LIVE_WHY = 'data error'; }
+})();
+
+/* ======================= Sidekick: one mode that adapts to what's on screen =======================
+   The companion app on the computer reads the front app, the window title and the focused control
+   (Windows UI Automation / macOS Accessibility) and picks up to 3 dial tools from a small fixed toolbox,
+   plus one press action. It sends them to the puck in one message; the puck only draws and executes. */
+const k = keys => B('usb.key', keys);
+const TOOLBOX = {
+  chars: { name: 'Cursor', left: k('left'), right: k('right'), fmt: v => v ? `${Math.abs(v)} char${Math.abs(v) > 1 ? 's' : ''} ${v > 0 ? '→' : '←'}` : 'At cursor' },
+  // Device-specific (Bambu Studio's 3D view): turn the build plate view around its axes instead of the scroll-wheel zoom.
+  // It replaces a left-button drag in the 3D view: sideways drag = spin around Z, up/down drag = tilt (X). arg = signed degrees
+  // per detent; press cycles 15 / 5 / 1 degrees. On the real puck this is a held left button plus mouse movement over Bluetooth.
+  bambuz: { name: 'Spin plate (Z)', axis: 'z', left: B('companion.bambu_view_z'), right: B('companion.bambu_view_z'), zsteps: [15, 5, 1], fmt: v => `${v >= 0 ? '+' : '−'}${Math.abs(v)}°` },
+  bambux: { name: 'Tilt plate (X)', axis: 'x', left: B('companion.bambu_view_x'), right: B('companion.bambu_view_x'), zsteps: [15, 5, 1], fmt: v => `${v >= 0 ? '+' : '−'}${Math.abs(v)}°` },
+  scroll: { name: 'Scroll', left: B('usb.scroll_up'), right: B('usb.scroll_down'), fmt: v => `Line ${Math.max(1, 120 + v * 3)}` },
+  volume: { name: 'Volume', left: B('usb.volume_down'), right: B('usb.volume_up'), pct: 40, step: 2 },
+  word: { name: 'Word jump', left: k('ctrl+left'), right: k('ctrl+right'), fmt: v => v ? `${Math.abs(v)} word${Math.abs(v) > 1 ? 's' : ''} ${v > 0 ? '→' : '←'}` : 'At cursor' },
+  undo: { name: 'Undo / redo', left: k('ctrl+z'), right: k('ctrl+y'), fmt: v => v < 0 ? `${-v} step${v < -1 ? 's' : ''} back` : 'Latest edit', min: -20, max: 0 },
+  zoom: { name: 'Zoom', left: k('ctrl+-'), right: k('ctrl+='), pct: 100, step: 10, max: 800, min: 10 },
+  scrub: { name: 'Scrub', left: k('left'), right: k('right'), fmt: v => `${v >= 0 ? '+' : '−'}${mmss(Math.abs(v) * 5)}` },
+  frames: { name: 'Frame by frame', left: k('left'), right: k('right'), fmt: v => `${v >= 0 ? '+' : '−'}${Math.abs(v)} frame${Math.abs(v) === 1 ? '' : 's'}` },
+  slides: { name: 'Slides', left: k('left'), right: k('right'), fmt: v => `Slide ${Math.max(1, 4 + v)}` },
+  tabs: { name: 'Tabs', left: k('ctrl+shift+tab'), right: k('ctrl+tab'), fmt: v => `Tab ${((3 + v) % 8 + 8) % 8 + 1} of 8` },
+  track: { name: 'Track', left: B('spotify.prev'), right: B('spotify.next'), fmt: v => v ? `${Math.abs(v)} ${v > 0 ? 'ahead' : 'back'}` : 'This song' },
+  channels: { name: 'Channels', left: k('alt+up'), right: k('alt+down'), fmt: v => ['#hardware', '#general', 'DMs', '#random'][((v % 4) + 4) % 4] },
+  scenes: { name: 'Scenes', left: B('obs.scene_prev'), right: B('obs.scene_next'), fmt: v => ['Camera', 'Screen share', 'Be right back'][((v % 3) + 3) % 3] }
+};
+// What the companion decides per context. Real version: rules first, then the focused control refines
+// (a text field puts Word jump first, a playing video puts Scrub first); unknown apps get the default.
+const SIDEKICK_RULES = {
+  zoom: { why: 'In a meeting', call: true, tools: [], press: { act: 'companion.mic_toggle', label: 'Mute / unmute' } },
+  meet: { why: 'In a meeting', call: true, tools: [], press: { act: 'companion.mic_toggle', label: 'Mute / unmute' } },
+  vscode: { why: 'Editing code', tools: ['scroll', 'word', 'undo'], press: { act: 'usb.key', arg: 'ctrl+s', label: 'Save' } },
+  word: { why: 'Writing', tools: ['scroll', 'word', 'undo'], press: { act: 'usb.key', arg: 'ctrl+s', label: 'Save' } },
+  spotify: { why: 'Music', tools: ['volume', 'track'], press: { act: 'spotify.play_pause', label: 'Play / pause' } },
+  premiere: { why: 'Video timeline', tools: ['frames', 'scrub', 'zoom'], press: { act: 'usb.key', arg: 'space', label: 'Play / pause' } },
+  figma: { why: 'Design canvas', tools: ['zoom', 'undo'], press: { act: 'usb.key', arg: 'shift+1', label: 'Zoom to fit' } },
+  powerpoint: { why: 'Presenting', tools: ['slides'], press: { act: 'usb.key', arg: 'b', label: 'Black screen' } },
+  slack: { why: 'Chat', tools: ['channels', 'scroll'], press: { act: 'usb.key', arg: 'enter', label: 'Open channel' } },
+  obs: { why: 'Streaming', tools: ['scenes', 'volume'], press: { act: 'obs.record', label: 'Start / stop recording' } },
+  chrome: { why: 'Reading a page', tools: ['scroll', 'tabs', 'zoom'], press: { act: 'usb.key', arg: 'alt+left', label: 'Back' } },
+  youtube: { why: 'Video playing', tools: ['scrub', 'volume'], press: { act: 'usb.key', arg: 'k', label: 'Play / pause' } },
+  bambuview: { why: '3D view', tools: ['bambuz', 'bambux'], steps: true, press: { act: 'puck.cycle', label: 'Step size' } },
+  default: { why: 'Any app', tools: ['scroll', 'volume'], press: { act: 'usb.play_pause', label: 'Play / pause' } }
+};
+// A focused text box (the companion finds it with Windows UI Automation or macOS Accessibility) beats the app's own tools
+// unless you're in a call. The dial then works like the Left / Right arrow keys; press starts and stops selecting.
+const TEXT_RULE = { why: 'Text box', text: true, tools: ['chars', 'word'], press: { act: 'puck.select_toggle', label: 'Start selecting' } };
+const sidekickRule = ctx => (ctx && ctx.text && TEXT_RULE) || SIDEKICK_RULES[ctx && ctx.id] || SIDEKICK_RULES.default;
+const nextWord = (t, i) => { let j = i; while (j < t.length && t[j] !== ' ') j++; while (j < t.length && t[j] === ' ') j++; return j; };
+const prevWord = (t, i) => { let j = i; while (j > 0 && t[j - 1] === ' ') j--; while (j > 0 && t[j - 1] !== ' ') j--; return j; };
+const withShift = b => b && b.act === 'usb.key' ? { ...b, arg: 'shift+' + b.arg } : b;
+
+const btFresh = () => ({ devs: [{ name: 'Device 1' }, { name: 'Device 2' }], target: 0, idx: 0, pairedName: '' });
+const TEMPLATES = {
+  sidekick: {
+    init: () => ({ ti: 0, vals: {}, pos: 0, rule: SIDEKICK_RULES.default, app: 'Desktop', switched: -1e9, flash: -1e9,
+      call: { muted: true, vol: 70, start: now(), app: 'Zoom' } }),
+    enter(s, ctx) {
+      s.rule = sidekickRule(ctx); s.app = ctx.label; s.title = ctx.sub; s.ti = 0; s.vals = {}; s.switched = -1e9;
+      s.zi = s.zi || 0; s.text = ctx.text || ''; s.caret = s.text.length; s.anchor = null; s.select = false;
+      if (s.rule.call) { s.call.app = ctx.label; s.call.start = now(); }
+      log('pc → puck', JSON.stringify({ t: 'sidekick', app: ctx.id, why: s.rule.why, call: !!s.rule.call || undefined, text: !!s.rule.text || undefined, view3d: !!ctx.view3d || undefined,
+        tools: s.rule.tools, press: s.rule.press.label }));
+    },
+    tool(s) { return TOOLBOX[s.rule.tools[s.ti]]; },
+    rotate(s, d) {
+      if (s.rule.call) { s.call.vol = clamp(s.call.vol + d * 2, 0, 100); return sidekickSend(d > 0 ? B('companion.call_vol_up') : B('companion.call_vol_down'), d > 0 ? 'turn_right' : 'turn_left'); }
+      const t = this.tool(s); if (!t) return;
+      const id = s.rule.tools[s.ti], v = s.vals[id] ?? (t.pct ?? 0);
+      s.vals[id] = t.pct != null ? clamp(v + d * (t.step || 1), t.min ?? 0, t.max ?? 100) : clamp(v + d, t.min ?? -999, t.max ?? 999);
+      s.pos += d;
+      if (t.zsteps) { // signed degrees per detent, step size chosen with press
+        const st = t.zsteps[s.zi || 0];
+        s.vals[id] = v + d * st;
+        return sidekickSend({ act: 'companion.bambu_view_' + t.axis, arg: String(d * st) }, d > 0 ? 'turn_right' : 'turn_left', id);
+      }
+      if (s.rule.text) { // move the caret in the sample text the same way the arrow keys would
+        const id2 = s.rule.tools[s.ti];
+        s.caret = clamp(id2 === 'word' ? (d > 0 ? nextWord(s.text, s.caret) : prevWord(s.text, s.caret)) : s.caret + d, 0, s.text.length);
+        s.vals[id] = 0;
+        return sidekickSend(s.select ? withShift(d > 0 ? t.right : t.left) : (d > 0 ? t.right : t.left), d > 0 ? 'turn_right' : 'turn_left', id);
+      }
+      sidekickSend(d > 0 ? t.right : t.left, d > 0 ? 'turn_right' : 'turn_left', id);
+    },
+    press(s) {
+      if (s.rule.steps) { // cycle 15 / 5 / 1 degrees
+        const z = TOOLBOX.bambuz.zsteps; s.zi = ((s.zi || 0) + 1) % z.length; s.flash = now();
+        return log('puck → pc', JSON.stringify({ evt: 'sidekick', step_deg: z[s.zi] }));
+      }
+      if (s.rule.text) { // press starts / stops selecting; turning then holds Shift
+        s.select = !s.select; s.anchor = s.select ? s.caret : null; s.flash = now();
+        return log('puck → pc', JSON.stringify({ evt: 'sidekick', select: s.select }));
+      }
+      if (s.rule.call) s.call.muted = !s.call.muted;
+      s.flash = now(); sidekickSend(s.rule.press, 'press');
+    },
+    // Double press: next suggested tool (only when there is more than one).
+    double(s) {
+      if (s.rule.tools.length < 2) return;
+      s.ti = (s.ti + 1) % s.rule.tools.length; s.switched = now();
+      log('puck → pc', JSON.stringify({ evt: 'sidekick', tool: s.rule.tools[s.ti] }));
+    },
+    draw(s, m, t) {
+      if (s.rule.call) { TEMPLATES.calls.draw(s.call, { color: COL.red }, t); label('Sidekick', 66, 15, m.color, 600); return; }
+      const tool = this.tool(s), id = s.rule.tools[s.ti], n = s.rule.tools.length;
+      arc(192, 4, 0, 360, COL.faint);
+      const a = -90 + s.pos * 18; arc(192, 10, a - 9, a + 9, m.color);
+      label(s.rule.text && s.select ? `${s.app} · Selecting` : `${s.app} · ${s.rule.why}`, 100, 17, s.rule.text && s.select ? COL.amber : COL.dim, 500, 250);
+      const fresh = now() - s.switched < 1200;
+      label(tool ? tool.name : 'Sidekick', s.rule.text ? C - 52 : C - 30, 36, fresh ? m.color : COL.white, 700, 300);
+      if (s.rule.text) this.drawText(s, m);
+      else if (tool) {
+        const v = s.vals[id] ?? (tool.pct ?? 0);
+        if (tool.pct != null) { valueArc(172, 8, 100 * (v - (tool.min ?? 0)) / ((tool.max ?? 100) - (tool.min ?? 0)), m.color); label(`${v}%`, C + 18, 26, m.color, 600); }
+        else label(tool.fmt(v), C + 18, 24, m.color, 600, 280);
+      }
+      if (n > 1) { dots(n, s.ti, C + 62); label(`Double-press: ${TOOLBOX[s.rule.tools[(s.ti + 1) % n]].name}`, C + 92, 16, COL.dim, 500, 260); }
+      const flash = now() - s.flash < 900;
+      const pl = s.rule.text ? (s.select ? 'Stop selecting' : 'Start selecting') : s.rule.steps ? `Step ${TOOLBOX.bambuz.zsteps[s.zi || 0]}°` : s.rule.press.label;
+      label(flash ? pl : `Press: ${pl}`, C + 124, 16, flash ? m.color : COL.dim, 600, 240);
+    },
+    // A strip of the text with the caret in the middle, so turning visibly moves through the words.
+    drawText(s, m) {
+      const t = s.text, y = C + 8, size = 24;
+      g.font = `500 ${size}px Montserrat, sans-serif`; g.textAlign = 'left'; g.textBaseline = 'middle';
+      const x0 = C - g.measureText(t.slice(0, s.caret)).width;
+      g.save(); g.beginPath(); g.rect(36, y - 22, W - 72, 44); g.clip();
+      if (s.anchor != null && s.anchor !== s.caret) {
+        const a = Math.min(s.anchor, s.caret), b = Math.max(s.anchor, s.caret);
+        const xa = x0 + g.measureText(t.slice(0, a)).width, xb = x0 + g.measureText(t.slice(0, b)).width;
+        g.fillStyle = 'rgba(255,181,71,.35)'; g.fillRect(xa, y - 16, xb - xa, 32);
+      }
+      g.fillStyle = COL.white; g.fillText(t, x0, y);
+      g.restore();
+      g.fillStyle = s.select ? COL.amber : m.color; g.fillRect(C - 1.5, y - 20, 3, 40);
+    }
+  },
+  idle: {
+    init: () => ({ vol: 45, muted: false, touched: -1e9 }),
+    // Home turns through the watch faces (plain clock, then each face) and sends nothing to the computer.
+    // Lineups saved before Sidekick still turn the computer's volume here.
+    rotate(s, d, m) {
+      if (homeMenu(m)) { // open the menu on Home and take this turn as its first step
+        hold(); const n = menuItems().length; S.menu.idx = ((S.menu.idx + d) % n + n) % n; S.menu.at = now(); return;
+      }
+      if (homeFaces(m)) {
+        const n = FACES.length + 1, f = (m.settings && m.settings.face >= 0) ? m.settings.face : -1;
+        m.settings = { ...(m.settings || {}), face: ((f + 1 + d) % n + n) % n - 1, faceSet: 3 }; save();
+        if (selected === 'idle') renderEditor(); return;
+      }
+      s.vol = clamp(s.vol + d * 2, 0, 100); s.touched = now();
+    },
+    press(s, m) {
+      const f = m.settings && FACES[m.settings.face];
+      if (f && f.spotify) { const mm = byId('media'), st = mm ? stateOf(mm) : SP_FALLBACK; st.playing = !st.playing; log('puck → spotify', JSON.stringify({ action: 'spotify.play_pause' })); return; }
+      if (!homeFaces(m)) s.muted = !s.muted;
+    },
+    draw(s, m) {
+      const f = m.settings && FACES[m.settings.face];
+      if (f) {
+        f.draw(clockNow());
+        if (now() - s.touched < 1500 || s.muted) { g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 0, W, W); valueArc(186, 10, s.muted ? 0 : s.vol, COL.white); label(s.muted ? 'Sound off' : `Volume ${s.vol}`, C, 34, COL.white, 700); }
+        return;
+      }
+      const d = new Date();
+      if (!homeFaces(m)) valueArc(186, 8, s.muted ? 0 : s.vol, COL.dim);
+      label(d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: TZ }).replace(/\s?[AP]M/i, ''), C - 10, 86, COL.white, 600);
+      label(d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric', timeZone: TZ }), C + 58, 20, COL.dim, 500);
+      const recent = now() - s.touched < 1500;
+      label(homeFaces(m) ? (homeMenu(m) ? 'Turn to choose a mode' : 'Turn for watch faces') : s.muted ? 'Sound off' : recent ? `Volume ${s.vol}` : 'Turn for volume', C + 128, 17, s.muted ? COL.amber : COL.dim, 500);
+    }
+  },
+  calls: {
+    init: () => ({ muted: true, vol: 70, start: now(), app: 'Zoom' }),
+    enter(s, ctx) { s.app = ctx.label; s.start = now(); },
+    rotate(s, d) { s.vol = clamp(s.vol + d * 2, 0, 100); },
+    press(s) { s.muted = !s.muted; },
+    draw(s, m, t) {
+      if (!s.muted) { const p = 0.75 + 0.25 * Math.sin(t / 380); arc(199, 12, 0, 360, m.color, p); arc(199, 26, 0, 360, m.color, 0.12 * p); }
+      else arc(199, 4, 0, 360, COL.faint);
+      valueArc(170, 10, s.vol, s.muted ? COL.dim : COL.white);
+      label(`${s.app} · ${mmss((now() - s.start) / 1000)}`, 96, 17, COL.dim, 500);
+      mic(C, C + 6, 1.35, s.muted ? COL.dim : m.color, s.muted);
+      label(s.muted ? 'MUTED' : 'LIVE', C + 70, 30, s.muted ? COL.dim : m.color, 700);
+      label(`Call volume ${s.vol}%`, C + 108, 16, COL.dim, 500);
+    }
+  },
+  typing: {
+    words: 'the puck should feel like a third hand on the desk'.split(' '),
+    init: () => ({ line: 142, word: 3, hist: 0, pos: 0, file: 'notes.md' }),
+    enter(s, ctx) { s.file = ctx.sub; },
+    rotate(s, d) {
+      s.pos += d;
+      if (s.layer === 0) s.line = Math.max(1, s.line + d * 3);
+      if (s.layer === 1) s.word = clamp(s.word + d, 0, this.words.length - 1);
+      if (s.layer === 2) s.hist = clamp(s.hist - d, 0, 20);
+    },
+    draw(s, m) {
+      arc(192, 4, 0, 360, COL.faint);
+      const a = -90 + s.pos * 18; arc(192, 10, a - 9, a + 9, m.color);
+      label(s.file, 108, 17, COL.dim, 500);
+      label(layerName(m, s), C - 30, 34, COL.white, 700);
+      let v = `Step ${s.pos}`;
+      if (s.layer === 0) v = `Line ${s.line}`;
+      if (s.layer === 1) v = this.words[s.word];
+      if (s.layer === 2) v = s.hist ? `${s.hist} step${s.hist > 1 ? 's' : ''} back` : 'Latest edit';
+      label(v, C + 24, s.layer === 1 ? 28 : 22, m.color, 600);
+      dots(m.layers.length, s.layer, C + 110);
+      label(pressLabel(m), C + 138, 14, COL.dim, 500);
+    }
+  },
+  media: {
+    init: () => ({ playing: true, vol: 40, pos: 62, len: 243, touched: -1e9, track: 'Midnight City', artist: 'M83', device: 'iPhone', last: now() }),
+    enter(s, ctx) { s.track = ctx.track || s.track; s.artist = ctx.artist || s.artist; },
+    rotate(s, d) { s.vol = clamp(s.vol + d * 2, 0, 100); s.touched = now(); },
+    press(s) { s.playing = !s.playing; },
+    draw(s, m) {
+      const t = now(); if (s.playing) s.pos = (s.pos + (t - s.last) / 1000) % s.len; s.last = t;
+      arc(196, 5, -90, 270, COL.faint); arc(196, 5, -90, -90 + 360 * s.pos / s.len, m.color);
+      valueArc(172, 8, s.vol, COL.dim);
+      label(s.track, C - 62, 26, COL.white, 700);
+      label(s.artist, C - 30, 18, COL.dim, 500);
+      g.fillStyle = COL.white;
+      if (s.playing) { g.fillRect(C - 17, C + 8, 11, 40); g.fillRect(C + 6, C + 8, 11, 40); }
+      else { g.beginPath(); g.moveTo(C - 13, C + 6); g.lineTo(C + 22, C + 28); g.lineTo(C - 13, C + 50); g.fill(); }
+      const recent = t - s.touched < 1500;
+      label(recent ? `Volume ${s.vol}` : `${mmss(s.pos)} / ${mmss(s.len)}`, C + 92, 17, recent ? COL.white : COL.dim, 500);
+      // Spotify reports which of your devices is playing; the puck shows it so playback on the phone is obvious.
+      if (m.press.act.startsWith('spotify.')) label(`Spotify · ${s.device}`, C + 124, 17, m.color, 600, 240);
+    }
+  },
+  editing: {
+    init: () => ({ frame: 2003, file: 'teaser.prproj' }),
+    enter(s, ctx) { s.file = ctx.sub; },
+    rotate(s, d) { s.frame = Math.max(0, s.frame + d * ([1, 24, 72][s.layer] || 1)); },
+    draw(s, m) {
+      for (let k = 0; k < 60; k++) { const a = k * 6 + s.frame * 6; arc(190, k % 5 ? 6 : 14, a - 0.6, a + 0.6, k % 5 ? COL.faint : COL.dim); }
+      arc(190, 18, -91.5, -88.5, m.color);
+      const f = s.frame, fps = 24;
+      const tc = [Math.floor(f / fps / 3600), Math.floor(f / fps / 60) % 60, Math.floor(f / fps) % 60, f % fps].map(n => String(n).padStart(2, '0')).join(':');
+      label(s.file, 112, 17, COL.dim, 500);
+      label(tc, C, 40, COL.white, 600);
+      label(`Jog by ${layerName(m, s).toLowerCase()}`, C + 48, 20, m.color, 600);
+      dots(m.layers.length, s.layer, C + 100);
+      label('24 fps', C + 128, 14, COL.dim, 500);
+    }
+  },
+  value: {
+    init: m => ({ v: +m.settings.value || 0, on: true, touched: -1e9 }),
+    rotate(s, d, m) { const st = m.settings; s.v = clamp(s.v + d * (+st.step || 1), +st.min, +st.max); s.touched = now(); },
+    press(s) { s.on = !s.on; },
+    draw(s, m) {
+      const st = m.settings, span = (+st.max - +st.min) || 1;
+      valueArc(178, 14, 100 * (s.v - st.min) / span, s.on ? m.color : COL.dim);
+      label(m.name, 104, 19, COL.dim, 500, 230);
+      label(`${s.v}${st.unit || ''}`, C - 4, 62, s.on ? COL.white : COL.dim, 600);
+      label(m.layers.length > 1 ? layerName(m, s) : (s.on ? layerName(m, s) : 'Off'), C + 52, 20, m.color, 600);
+      dots(m.layers.length, s.layer, C + 92);
+      label(pressLabel(m), C + 128, 14, COL.dim, 500, 240);
+    }
+  },
+  list: {
+    init: () => ({ i: 0, flash: -1e9 }),
+    rotate(s, d, m) { const n = m.settings.items.length || 1; s.i = ((s.i + d) % n + n) % n; },
+    press(s) { s.flash = now(); },
+    report(s, m) { const n = m.settings.items.length || 1; return { item: m.settings.items[s.i % n], index: s.i % n }; },
+    draw(s, m) {
+      const it = m.settings.items.length ? m.settings.items : ['(empty)'], n = it.length, i = s.i % n;
+      const seg = 360 / n;
+      for (let k = 0; k < n; k++) { const a = -90 + k * seg; arc(190, 10, a + 3, a + seg - 3, k === i ? m.color : COL.faint); }
+      label(m.name, 100, 18, COL.dim, 500, 230);
+      if (n > 1) label(it[(i - 1 + n) % n], C - 50, 18, COL.dim, 500);
+      label(it[i], C, 32, COL.white, 700);
+      if (n > 1) label(it[(i + 1) % n], C + 50, 18, COL.dim, 500);
+      const flash = now() - s.flash < 900;
+      label(flash ? (m.press.act === 'homekit.button' ? 'Sent to Home' : 'Sent') : `${i + 1} of ${n}`, C + 96, 16, flash ? m.color : COL.dim, 600);
+      label(pressLabel(m), C + 128, 14, COL.dim, 500, 240);
+    }
+  },
+  arm: {
+    // [name, min, max, start] in degrees; gripper is jaw opening in mm. Layers map to joints by name
+    // (same as the firmware), so a lineup without some joints still works.
+    joints: [['Base', -180, 180, 20], ['Shoulder', 0, 170, 60], ['Elbow', -150, 0, -75], ['Wrist', -90, 90, 15], ['Roll', -150, 150, 0], ['Gripper', 0, 60, 30]],
+    joint(m, s) { const l = m.layers[s.layer]; return l ? this.joints.findIndex(j => j[0] === l.name) : -1; },
+    init() { return { a: this.joints.map(j => j[3]), touched: -1e9 }; },
+    rotate(s, d, m) {
+      const k = this.joint(m, s), j = this.joints[k]; if (!j) return;
+      const step = j[0] === 'Gripper' ? 5 : (+m.settings.step || 5);
+      s.a[k] = clamp(s.a[k] + d * step, j[1], j[2]); s.touched = now();
+    },
+    report(s, m) { const k = m ? this.joint(m, s) : s.layer, j = this.joints[k]; return j ? { joint: j[0].toLowerCase(), value: s.a[k] } : {}; },
+    draw(s, m) {
+      if (s.a.length < this.joints.length) s.a = this.joints.map((j, i) => s.a[i] ?? j[3]);
+      const [base, sh, el, wr, roll, gr] = s.a, J = this.joints, cur = this.joint(m, s);
+      const col = i => i === cur ? m.color : COL.white;
+      // base rotation as a marker on the outer ring (top view)
+      arc(192, 4, 0, 360, COL.faint);
+      arc(192, 12, base - 90 - 5, base - 90 + 5, cur === 0 ? m.color : COL.dim);
+      label(`${m.name} · ${m.settings.host || 'arm.local'}`, 96, 15, COL.dim, 500, 230);
+      const j = J[cur];
+      label(j ? j[0] : layerName(m, s), 124, 20, m.color, 700);
+      if (j) label(j[0] === 'Gripper' ? `${gr} mm` : `${s.a[cur]}°`, 160, 38, COL.white, 600);
+      // side view: shoulder, elbow, wrist, gripper
+      const ox = C - 34, oy = C + 100, L1 = 80, L2 = 66, L3 = 22;
+      const a1 = -sh, a2 = a1 - el, a3 = a2 - wr;
+      const p1 = [ox + L1 * Math.cos(rad(a1)), oy + L1 * Math.sin(rad(a1))];
+      const p2 = [p1[0] + L2 * Math.cos(rad(a2)), p1[1] + L2 * Math.sin(rad(a2))];
+      const p3 = [p2[0] + L3 * Math.cos(rad(a3)), p2[1] + L3 * Math.sin(rad(a3))];
+      g.save(); g.lineCap = 'round';
+      g.fillStyle = cur === 0 ? m.color : COL.dim; g.fillRect(ox - 22, oy + 4, 44, 8);
+      const seg = (a, b, w, c) => { g.strokeStyle = c; g.lineWidth = w; g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.stroke(); };
+      seg([ox, oy + 4], [ox, oy], 8, cur === 0 ? m.color : COL.dim);
+      seg([ox, oy], p1, 9, col(1)); seg(p1, p2, 7, col(2)); seg(p2, p3, 5, col(3));
+      const jaw = 4 + gr / 6, n = [Math.cos(rad(a3 + 90)), Math.sin(rad(a3 + 90))], f = [Math.cos(rad(a3)), Math.sin(rad(a3))];
+      for (const sgn of [1, -1]) { const b0 = [p3[0] + n[0] * jaw * sgn, p3[1] + n[1] * jaw * sgn]; seg(b0, [b0[0] + f[0] * 14, b0[1] + f[1] * 14], 4, col(5)); }
+      // wrist roll: a small dial at the wrist, its tick turned by the roll angle
+      g.strokeStyle = col(4); g.lineWidth = 2; g.beginPath(); g.arc(p2[0], p2[1], 11, 0, Math.PI * 2); g.stroke();
+      seg(p2, [p2[0] + 11 * Math.cos(rad(roll - 90)), p2[1] + 11 * Math.sin(rad(roll - 90))], 3, col(4));
+      for (const [p, i] of [[[ox, oy], 1], [p1, 2], [p2, 3]]) { g.fillStyle = i - 1 === cur || i === cur ? m.color : '#000'; g.strokeStyle = col(i); g.lineWidth = 2; g.beginPath(); g.arc(p[0], p[1], 5, 0, Math.PI * 2); g.fill(); g.stroke(); }
+      g.restore();
+      dots(m.layers.length, cur, C + 132);
+    }
+  },
+  clock: {
+    init: m => ({ face: +m.settings.face || 0, touched: -1e9, pressed: -1e9 }),
+    rotate(s, d) { s.face = ((s.face + d) % FACES.length + FACES.length) % FACES.length; s.touched = now(); },
+    press(s) { const idle = byId('idle'); if (idle) { idle.settings = { ...(idle.settings || {}), face: s.face, faceSet: 3 }; save(); if (selected === 'idle') renderEditor(); } s.pressed = now(); },
+    report(s) { return { face: FACES[s.face].name }; },
+    draw(s) {
+      FACES[s.face].draw(clockNow());
+      const pressed = now() - s.pressed < 1400, turned = now() - s.touched < 1400;
+      if (pressed || turned) {
+        g.fillStyle = 'rgba(0,0,0,.7)'; g.beginPath(); g.roundRect(C - 120, C + 118, 240, 50, 25); g.fill();
+        label(pressed ? 'Set as Home face' : `${FACES[s.face].name} · ${s.face + 1} of ${FACES.length}`, C + 143, 20, COL.white, 600, 220);
+      }
+    }
+  },
+  settings: {
+    // Turn moves between rows; press opens a row. Wi-Fi status comes from the puck itself
+    // (sample values here). Time zone is saved on Idle (settings.tz), brightness on this mode.
+    // Bluetooth matches the firmware: the puck is a BLE keyboard
+    // "Smart Puck" connected to up to 2 computers at once (Device 1/2, renamed on the puck's web page; a name with "Mac"
+    // makes shortcuts send Cmd). Press opens: Send to <each connected computer>, Pair a new computer, Forget all computers, Back.
+    rows: ['wifi', 'bt', 'glow', 'brightness', 'tz', 'about'],
+    init: m => ({ row: 0, edit: null, at: -1e9, tzIdx: 0, bright: +(m.settings || {}).brightness || 80,
+      wifi: { wifi: 'connected', ssid: 'HomeWiFi', ip: '192.168.1.50', rssi: -58, ntp: true },
+      bt: btFresh() }),
+    rotate(s, d) {
+      if (s.edit === 'tz') s.tzIdx = (s.tzIdx + d + TZ_CHOICES.length) % TZ_CHOICES.length;
+      else if (s.edit === 'brightness') { s.bright = clamp(s.bright + d * 5, 5, 100); applyBrightness(s.bright); }
+      else if (s.edit === 'bt_menu') { const n = s.bt.devs.length + 3; s.bt.idx = ((s.bt.idx + d) % n + n) % n; }
+      else if (s.edit === 'wifi_confirm' || s.edit === 'bt_forget') s.edit = null;
+      else if (!s.edit) s.row = (s.row + d + this.rows.length) % this.rows.length;
+    },
+    press(s, m) {
+      if (!s.bt || !s.bt.devs) s.bt = btFresh();
+      const row = this.rows[s.row];
+      if (s.edit === 'wifi_setup') { // simulator only: pretend the phone finished setup
+        s.wifi = { ...s.wifi, wifi: 'connected', ip: '192.168.1.50', ntp: true }; s.edit = null;
+        log('puck → pc', JSON.stringify({ evt: 'wifi', ...s.wifi }));
+      } else if (s.edit === 'wifi_confirm') {
+        s.edit = 'wifi_setup'; s.wifi = { ...s.wifi, wifi: 'setup', ip: '192.168.4.1', ntp: false };
+        log('puck', 'wifi_reset: forget the network, open "Smart Puck setup"');
+        log('puck → pc', JSON.stringify({ evt: 'wifi', wifi: 'setup', ssid: 'Smart Puck setup', ip: '192.168.4.1', ntp: false }));
+      } else if (s.edit === 'bt_pair') { s.edit = null; log('puck', 'bt: pairing cancelled'); } // press cancels
+      else if (s.edit === 'bt_paired') s.edit = null;
+      else if (s.edit === 'bt_forget') { s.bt.devs = []; s.bt.target = -1; s.edit = 'bt_pair'; s.at = now(); log('puck', 'bt: forgot all computers, pairing window open'); }
+      else if (s.edit === 'bt_menu') {
+        const i = s.bt.idx, n = s.bt.devs.length;
+        if (i < n) { s.bt.target = i; s.edit = null; log('puck', `bt: sending keys to ${s.bt.devs[i].name}`); }
+        else if (i === n) { s.edit = 'bt_pair'; s.at = now(); log('puck', 'bt: pairing window open 2 min, advertising as "Smart Puck"'); }
+        else if (i === n + 1) s.edit = 'bt_forget';
+        else s.edit = null;
+      } else if (s.edit === 'tz') {
+        const z = TZ_CHOICES[s.tzIdx][0], idle = byId('idle');
+        if (idle) { idle.settings = { ...(idle.settings || {}), tz: z }; }
+        setTZ(z); save(); s.edit = null; if (selected === 'idle' || selected === m.id) renderEditor();
+        log('puck → pc', JSON.stringify({ evt: 'setting', key: 'tz', value: z }));
+      } else if (s.edit === 'brightness') {
+        m.settings = { ...(m.settings || {}), brightness: s.bright }; save(); s.edit = null;
+        log('puck → pc', JSON.stringify({ evt: 'setting', key: 'brightness', value: s.bright }));
+      } else if (row === 'wifi') { s.edit = 'wifi_confirm'; s.at = now(); }
+      else if (row === 'bt') { s.edit = 'bt_menu'; s.bt.idx = Math.max(0, s.bt.target); }
+      else if (row === 'tz') { s.edit = 'tz'; s.tzIdx = Math.max(0, TZ_CHOICES.findIndex(c => c[0] === TZ)); }
+      else if (row === 'brightness') s.edit = 'brightness';
+      else if (row === 'glow') { // toggles at once, no confirm (matches firmware)
+        const on = !glowOn(); m.settings = { ...(m.settings || {}), glow: on ? 1 : 0 }; save(); applyGlow();
+        log('puck → pc', JSON.stringify({ evt: 'setting', key: 'glow', value: on ? 1 : 0 }));
+      }
+    },
+    report(s) { return { setting: this.rows[s.row] }; },
+    draw(s, m) {
+      if (s.edit === 'wifi_confirm' && now() - s.at > 6000) s.edit = null;
+      if (s.edit === 'bt_pair' && now() - s.at > 120000) s.edit = null;
+      if (s.edit === 'bt_pair' && now() - s.at > 5000) { // simulator only: a computer picks the puck after 5 s
+        const b = s.bt; if (b.devs.length >= 2) b.devs.splice(b.target === 0 ? 1 : 0, 1);
+        const used = b.devs.map(d => d.name), name = ['Device 1', 'Device 2'].find(nm => !used.includes(nm));
+        b.devs.push({ name }); if (b.target < 0) b.target = 0; b.target = Math.min(b.target, b.devs.length - 1);
+        b.pairedName = name; s.edit = 'bt_paired'; log('puck', `bt: paired ${name}`);
+      }
+            if (s.edit === 'bt_pair') {
+        const left = Math.max(0, Math.ceil((120000 - (now() - s.at)) / 1000));
+        arc(186, 10, 0, 360, COL.amber, 0.55 + 0.45 * Math.sin(now() / 400));
+        label('Pairing', 96, 24, COL.amber, 700);
+        label('On your PC or Mac, open', C - 40, 19, COL.dim, 500, 300);
+        label('Bluetooth settings and', C - 14, 19, COL.dim, 500, 300);
+        label('choose Smart Puck', C + 20, 26, COL.white, 700, 300);
+        label(`${left} s left`, C + 64, 20, COL.dim, 500);
+        label('Press to cancel', C + 100, 19, COL.amber, 600);
+        label('Simulator: pairs after 5 s', C + 128, 16, COL.dim, 500, 260);
+        return;
+      }
+      if (s.edit === 'bt_paired') {
+        arc(186, 10, 0, 360, COL.green, 0.6);
+        label('Paired', C - 30, 36, COL.green, 700);
+        label(`${s.bt.pairedName} connected`, C + 14, 22, COL.white, 600, 300);
+        label('Press to continue', C + 100, 19, COL.dim, 500);
+        return;
+      }
+      if (s.edit === 'bt_forget') {
+        arc(186, 10, 0, 360, COL.amber);
+        label('Forget all computers?', C - 40, 25, COL.white, 700, 300);
+        label('Then pair again', C + 4, 19, COL.dim, 500, 280);
+        label('Press to confirm', C + 64, 21, COL.amber, 600);
+        label('Turn to cancel', C + 96, 19, COL.dim, 500);
+        return;
+      }
+      if (s.edit === 'bt_menu') {
+        const b = s.bt, items = [...b.devs.map(d => `Send to ${d.name}`), 'Pair a new computer', 'Forget all computers', 'Back'];
+        label('Bluetooth', 92, 20, COL.dim, 500);
+        label(items[b.idx], C - 8, 28, COL.white, 700, 300);
+        if (b.idx === b.target) label('Receiving keys now', C + 30, 19, COL.green, 500, 300);
+        label('Turn to choose, press to pick', C + 104, 18, m.color, 600, 300);
+        dots(items.length, b.idx, C + 150);
+        return;
+      }
+      if (!s.bt || !s.bt.devs) s.bt = btFresh(); // states saved before the Bluetooth row
+      const w = s.wifi, row = this.rows[s.row];
+      const wcol = w.wifi === 'connected' ? COL.green : w.wifi === 'setup' ? COL.amber : COL.red;
+      if (s.edit === 'wifi_setup') {
+        arc(186, 10, 0, 360, COL.amber, 0.5);
+        label('Wi-Fi setup', 100, 22, COL.amber, 700);
+        label('On your phone, join', C - 36, 20, COL.dim, 500);
+        label('Smart Puck setup', C + 2, 28, COL.white, 700, 300);
+        label('then open 192.168.4.1', C + 42, 20, COL.white, 600, 300);
+        label('Simulator: press when done', C + 118, 19, COL.dim, 500, 260);
+        return;
+      }
+      if (s.edit === 'wifi_confirm') {
+        arc(186, 10, 0, 360, COL.amber);
+        label('Set up Wi-Fi again?', C - 40, 26, COL.white, 700, 300);
+        label(`Forgets ${w.ssid}`, C + 4, 20, COL.dim, 500, 280);
+        label('Press to confirm', C + 64, 21, COL.amber, 600);
+        label('Turn to cancel', C + 96, 19, COL.dim, 500);
+        return;
+      }
+      label('Settings', 92, 20, COL.dim, 500);
+      if (row === 'wifi') {
+        arc(186, 8, 0, 360, wcol, 0.35);
+        label('Wi-Fi', C - 52, 22, COL.dim, 600);
+        label(w.wifi === 'connected' ? w.ssid : w.wifi === 'setup' ? 'Setting up' : 'Not connected', C - 12, 34, COL.white, 700, 300);
+        // signal bars from RSSI: -50 or better = 4, -60 = 3, -70 = 2, else 1
+        const bars = w.wifi !== 'connected' ? 0 : w.rssi >= -50 ? 4 : w.rssi >= -60 ? 3 : w.rssi >= -70 ? 2 : 1;
+        for (let k = 0; k < 4; k++) { g.fillStyle = k < bars ? wcol : COL.faint; g.fillRect(C - 22 + k * 12, C + 40 - (k + 1) * 7, 8, (k + 1) * 7); }
+        label(w.wifi === 'connected' ? w.ip : '', C + 64, 20, COL.dim, 500);
+        label('Press to set up again', C + 104, 19, m.color, 600, 260);
+      } else if (row === 'bt') {
+        const b = s.bt, d = b.devs[b.target];
+        if (d) arc(186, 8, 0, 360, COL.green, 0.35); else arc(186, 8, 0, 360, COL.faint);
+        label('Bluetooth', C - 52, 22, COL.dim, 600);
+        label(d ? d.name : 'Not connected', C - 12, 34, d ? COL.white : COL.dim, 700, 300);
+        label(d ? 'Receiving keys' : `${b.devs.length} computers connected`, C + 26, 19, d ? COL.green : COL.dim, 500, 300);
+        label('Press for options', C + 104, 19, m.color, 600, 280);
+      } else if (row === 'tz') {
+        const editing = s.edit === 'tz', c = TZ_CHOICES[editing ? s.tzIdx : Math.max(0, TZ_CHOICES.findIndex(x => x[0] === TZ))];
+        arc(186, 8, 0, 360, editing ? m.color : COL.faint);
+        label('Time zone', C - 52, 22, COL.dim, 600);
+        label(c[1], C - 12, 38, COL.white, 700);
+        label(new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: c[0] }), C + 30, 22, COL.dim, 500);
+        label(editing ? 'Turn to choose, press to save' : 'Press to change', C + 104, 19, m.color, 600, 280);
+      } else if (row === 'brightness') {
+        const editing = s.edit === 'brightness';
+        valueArc(186, 12, s.bright, editing ? m.color : COL.dim);
+        label('Brightness', C - 52, 22, COL.dim, 600);
+        label(`${s.bright}%`, C - 6, 52, COL.white, 700);
+        label(editing ? 'Turn to adjust, press to save' : 'Press to change', C + 104, 19, m.color, 600, 280);
+      } else if (row === 'glow') {
+        const on = glowOn();
+        arc(186, 8, 0, 360, on ? COL.green : COL.faint, on ? 0.5 : 1);
+        label('Light glow', C - 52, 22, COL.dim, 600);
+        label(on ? 'On' : 'Off', C - 6, 52, on ? COL.green : COL.white, 700);
+        label('Lights match the screen color', C + 40, 18, COL.dim, 500, 300);
+        label(on ? 'Press to turn off' : 'Press to turn on', C + 104, 19, m.color, 600, 280);
+      } else {
+        arc(186, 8, 0, 360, COL.faint);
+        label('About', C - 52, 22, COL.dim, 600);
+        label('Smart Puck', C - 14, 32, COL.white, 700);
+        label('Firmware 0.4.0', C + 22, 21, COL.dim, 500);
+        label(w.ntp ? 'Clock synced online' : 'Clock not synced', C + 52, 19, w.ntp ? COL.green : COL.amber, 500);
+      }
+      if (!s.edit) dots(this.rows.length, s.row, C + 150);
+    }
+  },
+  printer: {
+    // Live data comes from the shared doc printer/status (written by the PC monitor); otherwise a simulated job plays.
+    // Simulated job: progress runs fast so the whole print plays out in about 6 minutes.
+    init: () => ({ pct: 37, page: 0, state: 'Printing', light: true, flash: -1e9, last: now(), doneAt: 0 }),
+    rotate(s, d) { s.page = ((s.page + d) % 3 + 3) % 3; },
+    press(s, m) { if (m.press.act === 'bambu.light') s.light = !s.light; else if (m.press.act === 'bambu.pause') s.state = 'Paused'; else if (m.press.act === 'bambu.resume') s.state = 'Printing'; s.flash = now(); },
+    report(s) { return { state: s.state, percent: Math.floor(s.pct) }; },
+    draw(s, m) {
+      const t = now(), st = m.settings, dt = (t - s.last) / 1000; s.last = t;
+      const live = liveStatus();
+      if (live) return this.drawLive(s, m, live);
+      if (s.state === 'Printing') { s.pct = Math.min(100, s.pct + dt * 0.28); if (s.pct >= 100) { s.state = 'Finished'; s.doneAt = t; } }
+      if (s.state === 'Finished' && t - s.doneAt > 8000) { s.pct = 0; s.state = 'Printing'; }
+      const col = s.state === 'Paused' ? COL.amber : s.state === 'Finished' ? COL.green : m.color;
+      const pct = Math.floor(s.pct), total = (+st.layers || 300), layer = Math.max(1, Math.round(total * s.pct / 100));
+      const leftMin = Math.round((100 - s.pct) / 100 * (+st.hours || 2) * 60);
+      const left = leftMin >= 60 ? `${Math.floor(leftMin / 60)}h ${leftMin % 60}m` : `${leftMin}m`;
+      arc(184, 16, -90, 270, col, 0.16); if (s.pct > 0) arc(184, 16, -90, -90 + 3.6 * s.pct, col);
+      label(st.file || 'print.3mf', 100, 16, COL.dim, 500, 230);
+      if (s.page === 0) {
+        label(`${pct}%`, C - 6, 72, COL.white, 700);
+        label(s.state === 'Finished' ? 'Done, take it off the plate' : s.state === 'Paused' ? 'Paused' : `${left} left`, C + 52, 20, col, 600, 260);
+      } else if (s.page === 1) {
+        const noz = s.state === 'Finished' ? 45 : 220, bed = s.state === 'Finished' ? 30 : 65;
+        label('Nozzle', C - 56, 16, COL.dim, 500); label(`${noz}°`, C - 24, 40, COL.white, 700);
+        label('Bed', C + 22, 16, COL.dim, 500); label(`${bed}°`, C + 54, 40, COL.white, 700);
+      } else {
+        label('Layer', C - 56, 16, COL.dim, 500); label(String(layer), C - 12, 64, COL.white, 700);
+        label(`of ${total}`, C + 36, 20, COL.dim, 500);
+        const eta = new Date(Date.now() + leftMin * 60000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: TZ });
+        label(s.state === 'Finished' ? 'Finished' : `Done at ${eta}`, C + 70, 18, col, 600);
+      }
+      dots(3, s.page, C + 104);
+      const flash = t - s.flash < 1200;
+      label(flash ? (m.press.act === 'bambu.light' ? `Light ${s.light ? 'on' : 'off'}` : 'Sent') : BRIDGE_PAGE ? `Simulated · bridge has no data` : `Simulated · ${LIVE_WHY}`, C + 134, 15, flash ? col : COL.dim, 600, 240);
+    },
+    drawLive(s, m, L) {
+      const state = PRINT_STATES[L.gcode_state] || L.gcode_state || 'Unknown';
+      const col = state === 'Paused' ? COL.amber : state === 'Finished' ? COL.green : state === 'Failed' ? COL.red : state === 'Idle' ? COL.dim : m.color;
+      // Count the time left down between updates so the screen doesn't sit still for 2 minutes.
+      const since = Math.max(0, (Date.now() - seenAt(L)) / 60000);
+      const pct = clamp(+L.mc_percent || 0, 0, 100), leftMin = Math.max(0, Math.round((+L.mc_remaining_time || 0) - (L.gcode_state === 'RUNNING' ? since : 0)));
+      const left = leftMin >= 60 ? `${Math.floor(leftMin / 60)}h ${leftMin % 60}m` : `${leftMin}m`;
+      arc(184, 16, -90, 270, col, 0.16); if (pct > 0) arc(184, 16, -90, -90 + 3.6 * pct, col);
+      label(L.subtask_name || m.settings.printer || 'Printer', 100, 16, COL.dim, 500, 230);
+      if (s.page === 0) {
+        label(`${Math.floor(pct)}%`, C - 6, 72, COL.white, 700);
+        const sub = state === 'Printing' ? `${left} left` : state === 'Finished' ? 'Done, take it off the plate' : state;
+        label(sub, C + 52, 20, col, 600, 260);
+      } else if (s.page === 1) {
+        label('Nozzle', C - 56, 16, COL.dim, 500); label(`${Math.round(+L.nozzle_temper || 0)}°`, C - 24, 40, COL.white, 700);
+        label('Bed', C + 22, 16, COL.dim, 500); label(`${Math.round(+L.bed_temper || 0)}°`, C + 54, 40, COL.white, 700);
+      } else {
+        label('Layer', C - 56, 16, COL.dim, 500); label(String(L.layer_num ?? '–'), C - 12, 64, COL.white, 700);
+        label(`of ${L.total_layer_num ?? '–'}`, C + 36, 20, COL.dim, 500);
+        const eta = new Date(Date.now() + leftMin * 60000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: TZ });
+        label(state === 'Printing' ? `Done at ${eta}` : state, C + 70, 18, col, 600);
+      }
+      dots(3, s.page, C + 104);
+      const ago = Math.max(0, Math.round((Date.now() - seenAt(L)) / 1000));
+      label(`Live · ${ago < 60 ? ago + 's' : Math.round(ago / 60) + 'm'} ago`, C + 134, 15, col, 600, 240);
+    }
+  },
+  timer: {
+    init: m => ({ min: +m.settings.minutes || 25, left: (+m.settings.minutes || 25) * 60, running: false, last: now() }),
+    rotate(s, d) { if (!s.running) { s.min = clamp(s.min + d, 1, 120); s.left = s.min * 60; } },
+    press(s) { if (s.left <= 0) s.left = s.min * 60; s.running = !s.running; },
+    draw(s, m) {
+      const t = now(); if (s.running) { s.left = Math.max(0, s.left - (t - s.last) / 1000); if (!s.left) s.running = false; } s.last = t;
+      arc(186, 14, 0, 360, COL.faint);
+      const f = s.left / (s.min * 60); if (f > 0) arc(186, 14, -90, -90 + 360 * f, m.color);
+      label(m.name, 104, 19, COL.dim, 500, 230);
+      label(mmss(Math.ceil(s.left)), C - 2, 64, COL.white, 600);
+      label(s.left <= 0 ? 'Done' : s.running ? 'Running' : 'Turn to set, press to start', C + 56, 17, s.running ? m.color : COL.dim, 600);
+      label(pressLabel(m), C + 128, 14, COL.dim, 500, 240);
+    }
+  }
+};
+const TEMPLATE_NAMES = { sidekick: 'Sidekick', settings: 'Settings', idle: 'Clock', calls: 'Call', typing: 'Typing', media: 'Now playing', editing: 'Jog wheel', value: 'Value dial', list: 'List picker', timer: 'Timer', arm: 'Robot arm', clock: 'Watch face', printer: '3D print status' };
+
+/* ======================= Runtime ======================= */
+const S = { mode: 'calls', auto: true, menu: null, fade: 0, detents: 0, states: {} };
+function stateOf(m) {
+  if (!S.states[m.id]) { S.states[m.id] = TEMPLATES[m.template].init(m); S.states[m.id].layer = 0; }
+  const s = S.states[m.id]; if (s.layer >= m.layers.length) s.layer = 0;
+  return s;
+}
+const resetState = m => { delete S.states[m.id]; };
+const cur = () => byId(S.mode) || modes[0];
+
+function setMode(id, ctx) {
+  const m = byId(id); if (!m) return;
+  const t = TEMPLATES[m.template];
+  if (ctx && t.enter) t.enter(stateOf(m), ctx);
+  if (id !== S.mode) S.fade = 1;
+  S.mode = id; renderChrome(); renderNav(); applyGlow();
+}
+// Sidekick actions come from the companion's message, not the lineup, so they're logged here.
+function sidekickSend(b, input, tool) {
+  if (!b || b.act === 'puck.none') return;
+  const o = { in: input, do: b.act }; if (b.arg) o.arg = b.arg; if (tool) o.tool = tool;
+  log(actInfo(b.act).svc.tag, JSON.stringify(o), true);
+}
+function emit(m, b, input) {
+  if (!b || b.act === 'puck.none' || b.act === 'puck.menu') return;
+  const { svc } = actInfo(b.act);
+  const o = { in: input, do: b.act };
+  if (b.arg) o.arg = b.arg;
+  if (b.act === 'puck.cycle') o.layer = layerName(m, stateOf(m));
+  else { const t = TEMPLATES[m.template]; if (t.report) Object.assign(o, t.report(stateOf(m), m)); }
+  log(svc.tag, JSON.stringify(o), true);
+}
+function rotate(d) {
+  if (BOOT) return endBoot(); // any input skips the startup animation
+  S.detents += d; ringEl.style.transform = `rotate(${S.detents * 18}deg)`;
+  const items = menuItems();
+  if (S.menu) { S.menu.idx = ((S.menu.idx + d) % items.length + items.length) % items.length; S.menu.at = now(); return; }
+  if (INT) return dismissInterrupt();
+  const m = cur(), s = stateOf(m), t = TEMPLATES[m.template];
+  t.rotate && t.rotate(s, d, m);
+  const Ly = m.layers[s.layer] || m.layers[0];
+  emit(m, d > 0 ? Ly.right : Ly.left, d > 0 ? 'turn_right' : 'turn_left');
+}
+let pressTimer = null;
+function press() {
+  if (BOOT) return endBoot();
+  if (!S.menu && INT) return openInterrupt();
+  if (!S.menu && cur().template === 'sidekick') {
+    const s = stateOf(cur());
+    if (!s.rule.call && s.rule.tools.length > 1) { // wait briefly to tell a single press from a double press
+      if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; return doublePress(); }
+      pressTimer = setTimeout(() => { pressTimer = null; pressNow(); }, 320); return;
+    }
+  }
+  pressNow();
+}
+function doublePress() {
+  if (BOOT) return endBoot();
+  const m = cur(), t = TEMPLATES[m.template];
+  if (S.menu) return;
+  if (t.double) t.double(stateOf(m), m); else { pressNow(); pressNow(); }
+}
+function pressNow() {
+  if (S.menu) {
+    const id = menuItems()[S.menu.idx]; S.menu = null;
+    // Idle doubles as Auto: show the clock and follow the computer again from the next app switch.
+    if (id === 'idle') { S.auto = true; log('companion', JSON.stringify({ evt: 'pin', mode: null }), true); setMode('idle'); }
+    else { S.auto = false; log('companion', JSON.stringify({ evt: 'pin', mode: id }), true); setMode(id); }
+    renderChrome(); return;
+  }
+  const m = cur(), s = stateOf(m), t = TEMPLATES[m.template];
+  if (m.press.act === 'puck.cycle') s.layer = (s.layer + 1) % m.layers.length;
+  else t.press && t.press(s, m);
+  emit(m, m.press, 'press');
+}
+const menuItems = () => active().map(m => m.id);
+function hold() { if (BOOT) endBoot(); INT = null; const it = menuItems(); S.menu = { idx: Math.max(0, it.indexOf(S.auto ? 'idle' : S.mode)), at: now() }; }
+// The menu picks the highlighted mode by itself after 5 s without a turn.
+const MENU_AUTO_MS = 5000;
+function drawMenu() {
+  if (now() - (S.menu.at || 0) > MENU_AUTO_MS) { log('puck', 'menu: no turn for 5 s, picking the highlighted mode'); return pressNow(); }
+  const it = menuItems(), n = it.length, i = S.menu.idx;
+  const nm = id => byId(id).name;
+  g.fillStyle = '#000'; g.beginPath(); g.arc(C, C, C, 0, Math.PI * 2); g.fill();
+  const seg = 360 / n;
+  it.forEach((id, k) => { const a = -90 + k * seg; arc(186, 12, a + 2, a + seg - 2, k === i ? byId(id).color : COL.faint); });
+  // Only the selected mode; the ring segments show where you are in the list.
+  label('Choose mode', C - 62, 18, COL.dim, 500);
+  label(nm(it[i]), C, 44, COL.white, 700, 320);
+  label(it[i] === 'idle' ? 'Clock, follow the computer' : 'Pin this mode', C + 56, 18, byId(it[i]).color, 500, 300);
+  // Thin inner ring fills up to the automatic pick; any turn starts it over.
+  const f = Math.min(1, (now() - S.menu.at) / MENU_AUTO_MS);
+  if (f > 0) arc(166, 3, -90, -90 + 360 * f, byId(it[i]).color, 0.6);
+}
+function frame(t) {
+  g.clearRect(0, 0, W, W); g.fillStyle = '#000'; g.fillRect(0, 0, W, W);
+  g.save();
+  if (S.fade > 0) { S.fade = Math.max(0, S.fade - 0.06); g.globalAlpha = 1 - S.fade; const k = 1 - S.fade * 0.06; g.translate(C, C); g.scale(k, k); g.translate(-C, -C); }
+  const m = cur(); TEMPLATES[m.template].draw(stateOf(m), m, t);
+  g.restore();
+  if (BOOT) { drawBoot(); requestAnimationFrame(frame); return; }
+  if (!S.menu) drawInterrupt();
+  if (S.menu) drawMenu();
+  requestAnimationFrame(frame);
+}
+
+/* ======================= Startup animations (ideas, 2026-11-03) =======================
+   Played once at power-on, about 2.6 s, then the puck hands over to whatever mode it starts in (usually Home).
+   Each one is drawn on top of that mode and fades straight into it. Any turn or press skips it.
+   The puck's lights follow the animation's colors when Light glow is on. */
+const BOOTS = [
+  { id: 'segments', name: 'Segments', sub: 'Color wheel settles into mode colors' },
+  { id: 'orbit', name: 'Orbit', sub: 'Sun and earth spin up' },
+  { id: 'ripple', name: 'Ripple', sub: 'Press wave and a hello' },
+  { id: 'dialup', name: 'Dial up', sub: 'Ticks light like a turn' },
+  { id: 'iris', name: 'Iris', sub: 'Aperture opens on Home' }
+];
+const BOOT_MS = 2600;
+let BOOT = null, bootPick = 'segments';
+try { bootPick = localStorage.getItem('puck-boot') || 'segments'; } catch (e) {}
+const easeOut = x => 1 - Math.pow(1 - x, 3);
+const easeInOut = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const span = (p, a, b) => clamp((p - a) / (b - a), 0, 1);
+const hexRgb = h => { h = h.replace('#', ''); if (h.length === 3) h = [...h].map(x => x + x).join(''); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); };
+const hslRgb = (hue, sat = 0.85, lit = 0.58) => { // hue in degrees, red at 12 o'clock
+  const f = k => { const q = (k + hue / 30) % 12; return lit - sat * Math.min(lit, 1 - lit) * Math.max(-1, Math.min(q - 3, 9 - q, 1)); };
+  return [f(0), f(8), f(4)].map(v => Math.round(v * 255));
+};
+const bootPalette = () => { const c = active().filter(m => m.id !== 'idle').map(m => m.color); return c.length ? c : [COL.accent]; };
+function playBoot(id) {
+  if (byId('idle')) { S.auto = true; setMode('idle'); S.fade = 0; renderChrome(); } // the puck starts on Home
+  BOOT = { id, at: now() }; bootPick = id;
+  try { localStorage.setItem('puck-boot', id); } catch (e) {}
+  log('puck', JSON.stringify({ evt: 'boot', animation: id }), true);
+  renderBootButtons();
+}
+function endBoot() { BOOT = null; applyGlow(); }
+function bootGlow(color) {
+  const r = document.getElementById('ring');
+  if (r && glowOn()) r.style.boxShadow = `0 18px 40px rgba(0,0,0,.28), inset 0 0 0 2px #50565e, 0 0 26px 4px ${color}88`;
+}
+function greeting() { const h = clockNow().h24; return h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
+const BOOT_DRAW = {
+  // a full color wheel spins in from the top and slows, then its hues settle
+  // into the mode colors and gaps open, leaving the same segment ring as the hold menu. "Smart Puck" fades in.
+  segments(p) {
+    const pal = bootPalette(), n = pal.length, seg = 360 / n;
+    const draw = easeOut(span(p, 0, 0.3));                 // wheel sweeps in clockwise from 12 o'clock
+    const rot = -270 * (1 - easeOut(span(p, 0, 0.6)));     // spins 3/4 turn, slowing to a stop
+    const m = easeInOut(span(p, 0.32, 0.6));               // 0 = rainbow wheel, 1 = mode segments
+    const gap = 4 * m, SL = 6;                             // slices per segment (60 total on the device)
+    g.save(); g.lineCap = 'butt'; g.lineWidth = 12;
+    let top = null;
+    for (let k = 0; k < n; k++) {
+      const a0 = k * seg + gap / 2, a1 = (k + 1) * seg - gap / 2, mc = hexRgb(pal[k]);
+      for (let j = 0; j < SL; j++) {
+        const s0 = a0 + (a1 - a0) * j / SL, s1 = a0 + (a1 - a0) * (j + 1) / SL;
+        if (s0 >= 360 * draw) continue;
+        const e = Math.min(s1, 360 * draw), hc = hslRgb((s0 + s1) / 2);
+        const c = mc.map((v, i) => Math.round(hc[i] + (v - hc[i]) * m));
+        const col = `rgb(${c})`; if (top === null) top = col;
+        g.strokeStyle = col; g.beginPath();
+        g.arc(C, C, 186, rad(-90 + rot + s0), rad(-90 + rot + e + (j < SL - 1 && e === s1 ? 0.6 : 0))); g.stroke();
+      }
+    }
+    g.restore();
+    const w = easeOut(span(p, 0.45, 0.68));
+    if (w > 0) { g.save(); g.globalAlpha *= w; txt('Smart Puck', C, C, 40, COL.white, 700, 8 * (1 - w)); g.restore(); }
+    // the LEDs run the hue under 12 o'clock while it's a wheel, then the first mode color
+    return m < 0.5 ? `rgb(${hslRgb(((-rot) % 360 + 360) % 360)})` : pal[0];
+  },
+  // Ties to the Orbit watch face: the earth spirals out to its orbit, then the sun leaves the center for the hour.
+  orbit(p) {
+    const t = clockNow();
+    arc(124, 1.5, 0, 360, '#262a31', span(p, 0.05, 0.3)); arc(176, 1.5, 0, 360, '#262a31', span(p, 0.4, 0.65));
+    const sunR = 176 * easeInOut(span(p, 0.5, 0.82)), sa = t.aH, sunS = 16 * easeOut(span(p, 0, 0.18));
+    const [sx, sy] = sunR > 0 ? polar(sa, sunR) : [C, C];
+    if (sunS > 0) { const gl = g.createRadialGradient(sx, sy, 0, sx, sy, sunS * 3); gl.addColorStop(0, '#ffb547'); gl.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gl; g.fillRect(sx - sunS * 3, sy - sunS * 3, sunS * 6, sunS * 6); disc(sx, sy, sunS, '#ffb547'); }
+    const er = 30 + 94 * easeOut(span(p, 0.05, 0.6)), ea = 720 * easeOut(span(p, 0.03, 0.75)) + t.aM - 720;
+    if (p > 0.05) {
+      g.save(); g.lineCap = 'round';
+      for (let k = 0; k < 24; k++) { const a = ea - k * 5, [x, y] = polar(a, er - k * 1.2 * (1 - span(p, 0.5, 0.75))); disc(x, y, 6 * (1 - k / 24), `rgba(96,165,250,${0.5 * (1 - k / 24)})`); }
+      g.restore();
+      const [ex, ey] = polar(ea, er); disc(ex, ey, 12, '#60a5fa');
+    }
+    const tt = span(p, 0.62, 0.85);
+    if (tt > 0) { g.save(); g.globalAlpha *= tt; txt(`${t.hh}:${t.mm}`, C, C + 4, 84, '#f2f4f7', 700, -2); g.restore(); }
+    return p < 0.5 ? '#60a5fa' : '#ffb547';
+  },
+  // A press: the center dips, three rings roll out in the first mode colors, then a hello for the time of day.
+  ripple(p) {
+    const pal = bootPalette();
+    const press = p < 0.1 ? 1 - 0.4 * span(p, 0, 0.1) : 0.6 + 0.4 * easeOut(span(p, 0.1, 0.2));
+    const dot = 1 - span(p, 0.2, 0.3);
+    if (dot > 0) disc(C, C, 26 * press, `rgba(242,244,247,${dot})`);
+    [0.1, 0.2, 0.3].forEach((d, k) => {
+      const q = span(p, d, d + 0.45); if (q <= 0 || q >= 1) return;
+      arc(20 + 190 * easeOut(q), 8 * (1 - q) + 2, 0, 360, pal[k % pal.length], 0.9 * (1 - q));
+    });
+    const w = easeOut(span(p, 0.32, 0.55));
+    if (w > 0) {
+      g.save(); g.globalAlpha *= w;
+      txt('Smart Puck', C, C - 14, 40, COL.white, 700, 10 * (1 - w));
+      txt(greeting(), C, C + 34, 20, COL.dim, 500);
+      g.restore();
+    }
+    return p > 0.3 ? (pal[1] || pal[0]) : pal[0];
+  },
+  // Like turning the knob from zero: the 60 ticks light clockwise in the mode colors, with a count to 100.
+  dialup(p) {
+    const pal = bootPalette(), lit = 60 * easeInOut(span(p, 0.02, 0.6)), pulse = span(p, 0.6, 0.8);
+    let last = pal[0];
+    for (let k = 0; k < 60; k++) {
+      const on = k < lit, c = pal[Math.floor(k / 60 * pal.length)];
+      if (on) last = c;
+      tick(k * 6, k % 5 ? 178 : 166, 196, k % 5 ? 4 : 7, on ? c : '#22262c');
+    }
+    if (p < 0.6) { const [x, y] = polar(lit * 6, 150); disc(x, y, 7, COL.white); }
+    if (p < 0.62) txt(String(Math.round(100 * lit / 60)), C, C, 76, COL.white, 700, -2);
+    else { const t = clockNow(); g.save(); g.globalAlpha *= span(p, 0.62, 0.72); txt(`${t.hh}:${t.mm}`, C, C, 76, COL.white, 700, -2); g.restore(); }
+    if (pulse > 0 && pulse < 1) arc(186, 30, 0, 360, last, 0.25 * Math.sin(Math.PI * pulse));
+    return last;
+  },
+  // A camera iris: six blades spin open from the center onto the screen underneath.
+  iris(p) {
+    const q = easeInOut(span(p, 0.12, 0.85)), rr = 6 + (C * 1.06) * q, spin = 70 * q;
+    g.save(); g.fillStyle = '#121519'; g.beginPath(); g.rect(0, 0, W, W); g.arc(C, C, rr, 0, Math.PI * 2, true); g.fill('evenodd');
+    g.strokeStyle = '#4a5058'; g.lineWidth = 3;
+    for (let k = 0; k < 6; k++) { const a = k * 60 + spin, [x0, y0] = polar(a, rr), [x1, y1] = polar(a + 50, C + 20); g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); }
+    g.restore();
+    arc(rr, 4, 0, 360, COL.accent, 0.8 * (1 - span(p, 0.75, 0.95)));
+    if (p < 0.15) disc(C, C, 6 + 4 * Math.sin(p * 60), COL.accent);
+    return COL.accent;
+  }
+};
+function drawBoot() {
+  const p = (now() - BOOT.at) / BOOT_MS;
+  if (p >= 1) return endBoot();
+  const fade = 1 - easeOut(span(p, 0.8, 1));
+  g.save(); g.globalAlpha = fade;
+  if (BOOT.id !== 'iris') { g.fillStyle = '#000'; g.fillRect(0, 0, W, W); }
+  const c = BOOT_DRAW[BOOT.id](p);
+  g.restore();
+  if (c) bootGlow(c);
+}
+const bootsEl = document.getElementById('boots');
+function renderBootButtons() {
+  if (!bootsEl) return;
+  bootsEl.innerHTML = '';
+  BOOTS.forEach(b => {
+    const el = document.createElement('button'); el.type = 'button'; el.className = 'app'; el.id = 'boot-' + b.id;
+    el.innerHTML = `<b>${b.name}</b><span>${b.sub}</span>`; el.setAttribute('aria-pressed', b.id === bootPick);
+    el.onclick = () => playBoot(b.id); bootsEl.appendChild(el);
+  });
+}
+renderBootButtons();
+
+/* ======================= Interrupts =======================
+   Things the puck watches itself (the printer over MQTT, Spotify over the Web API) can pop up over any mode.
+   Alerts that need you (print paused, failed, finished) stay until you act: press opens that mode, turn dismisses.
+   Glances (print started, new song) show for 5 s and press opens that mode. Nothing pops up during a call;
+   it waits until the call ends. A newer alert replaces an older one; a glance never covers an alert. */
+const INTERRUPT_KINDS = {
+  print_pause:  { src: 'printer', title: 'Print paused',   body: 'Needs your attention', color: COL.amber, sticky: true },
+  print_failed: { src: 'printer', title: 'Print failed',   body: 'Check the printer',    color: COL.red,   sticky: true },
+  print_finish: { src: 'printer', title: 'Print finished', body: 'Ready on the plate',   color: COL.green, sticky: true },
+  print_start:  { src: 'printer', title: 'Print started',  body: '',                     color: '#34d399', sticky: false },
+  song:         { src: 'media',   title: '',               body: '',                     color: '#39d98a', sticky: false, via: 'Spotify' }
+};
+const GLANCE_MS = 5000;
+let INT = null, intWaiting = [];
+const inCall = () => { const m = cur(), s = stateOf(m); return m.template === 'calls' || (m.template === 'sidekick' && !!(s.rule && s.rule.call)); };
+function interrupt(kind, extra) {
+  const d = { ...INTERRUPT_KINDS[kind], ...(extra || {}), kind };
+  const target = byId(d.src);
+  if (!target || target.off) return log('note', `${kind}: ${d.src} mode is off, nothing pops up`);
+  if (S.mode === d.src && !S.menu) return log('note', `${kind}: already on ${target.name}`);
+  if (inCall()) {
+    intWaiting = intWaiting.filter(w => w.src !== d.src);
+    intWaiting.push(d); return log('note', `${kind}: waiting until the call ends`);
+  }
+  if (INT && INT.sticky && !d.sticky) return log('note', `${kind}: not shown over an alert`);
+  showInterrupt(d);
+}
+function showInterrupt(d) { d.at = now(); INT = d; log('puck', JSON.stringify({ evt: 'interrupt', kind: d.kind, src: d.src }), true); }
+function openInterrupt() { const id = INT.src; log('puck', JSON.stringify({ evt: 'interrupt_open', kind: INT.kind }), true); INT = null; setMode(id); }
+function dismissInterrupt() { log('puck', JSON.stringify({ evt: 'interrupt_dismiss', kind: INT.kind }), true); INT = null; }
+function printerChanged(state, file) {
+  const kind = { PAUSE: 'print_pause', FAILED: 'print_failed', FINISH: 'print_finish', RUNNING: 'print_start' }[state];
+  if (kind) interrupt(kind, kind === 'print_start' ? { body: file || '' } : {});
+}
+function drawInterrupt() {
+  if (!INT && intWaiting.length && !inCall()) showInterrupt(intWaiting.shift());
+  if (!INT) return;
+  const d = INT, age = now() - d.at, srcName = (byId(d.src) || {}).name || '';
+  if (!d.sticky && age > GLANCE_MS) { INT = null; return; }
+  const k = Math.min(1, age / 180);
+  if (d.sticky) {
+    g.fillStyle = `rgba(0,0,0,${k})`; g.beginPath(); g.arc(C, C, C, 0, Math.PI * 2); g.fill();
+    const pulse = 0.7 + 0.3 * Math.sin(now() / 300);
+    arc(194, 14, 0, 360, d.color, pulse * k);
+    label(srcName, C - 74, 20, d.color, 600);
+    label(d.title, C - 20, 40, COL.white, 700, 300);
+    label(d.body, C + 26, 20, COL.dim, 500, 280);
+    label('Press to open', C + 92, 18, d.color, 600);
+    label('Turn to dismiss', C + 122, 16, COL.dim, 500);
+  } else {
+    // A glance: a band across the lower part of the screen that empties as it times out.
+    const y0 = C + 50, h = 116;
+    g.save(); g.beginPath(); g.arc(C, C, C, 0, Math.PI * 2); g.clip();
+    g.globalAlpha = k; g.fillStyle = 'rgba(12,14,17,.95)'; g.fillRect(0, y0, W, h);
+    g.fillStyle = d.color; g.fillRect(0, y0, W * Math.max(0, 1 - age / GLANCE_MS), 4);
+    g.restore();
+    label(d.title, y0 + 34, 24, COL.white, 700, 250);
+    label(d.body ? `${d.body} · ${d.via || srcName}` : (d.via || srcName), y0 + 62, 16, COL.dim, 500, 230);
+    label('Press to open', y0 + 88, 15, d.color, 600);
+  }
+}
+// Simulator buttons for the things the puck watches.
+const SONGS = [['Midnight City', 'M83'], ['Intro', 'The xx'], ['Nightcall', 'Kavinsky'], ['Breathe', 'Télépopmusik']];
+let songIdx = 0;
+const printerSim = () => { const pm = byId('printer'); return pm ? stateOf(pm) : {}; };
+const EVENTS = [
+  { id: 'print_pause', label: 'Print pauses', sub: '3D printer', go: () => { printerSim().state = 'Paused'; log('printer → puck', JSON.stringify({ state: 'PAUSE' })); interrupt('print_pause'); } },
+  { id: 'print_failed', label: 'Print fails', sub: '3D printer', go: () => { printerSim().state = 'Paused'; log('printer → puck', JSON.stringify({ state: 'FAILED' })); interrupt('print_failed'); } },
+  { id: 'print_finish', label: 'Print finishes', sub: '3D printer', go: () => { const ps = printerSim(); ps.pct = 100; ps.state = 'Finished'; ps.doneAt = now(); log('printer → puck', JSON.stringify({ state: 'FINISH' })); interrupt('print_finish'); } },
+  { id: 'print_start', label: 'Print starts', sub: '3D printer', go: () => { const ps = printerSim(); ps.pct = 0; ps.state = 'Printing'; log('printer → puck', JSON.stringify({ state: 'RUNNING' })); interrupt('print_start', { body: ((byId('printer') || {}).settings || {}).file || '' }); } },
+  { id: 'song', label: 'Song changes', sub: 'Spotify, any device', go: () => {
+      songIdx = (songIdx + 1) % SONGS.length; const [track, artist] = SONGS[songIdx];
+      const mm = byId('media'); for (const ms of [mm ? stateOf(mm) : SP_FALLBACK]) { ms.track = track; ms.artist = artist; ms.pos = 0; ms.playing = true; }
+      log('spotify → puck', JSON.stringify({ track, artist })); interrupt('song', { title: track, body: artist }); } }
+];
+const eventsEl = document.getElementById('events');
+EVENTS.forEach(e => {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'app'; b.id = 'ev-' + e.id;
+  b.innerHTML = `<b>${e.label}</b><span>${e.sub}</span>`; b.onclick = e.go; eventsEl.appendChild(b);
+});
+
+/* ======================= Computer side ======================= */
+let lastCtx = null;
+const appsEl = document.getElementById('apps');
+APPS.forEach(a => {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'app'; b.id = 'app-' + a.id;
+  b.innerHTML = `<b>${a.label}</b><span>${a.sub}</span>`;
+  b.onclick = () => focusApp(a); appsEl.appendChild(b);
+});
+const modeForApp = a => ((a.text || a.view3d) && active().find(m => m.triggers.includes('*')))
+  || active().find(m => m.triggers.some(t => t.toLowerCase() === a.id || t.toLowerCase() === a.label.toLowerCase()))
+  || active().find(m => m.triggers.includes('*')) || byId('idle') || modes[0];
+function routeApp(a) { setMode(modeForApp(a).id, a); }
+function focusApp(a) {
+  lastCtx = a;
+  const m = modeForApp(a);
+  log('pc → puck', JSON.stringify({ t: 'ctx', app: a.id, mode: m.id, title: a.sub }));
+  if (m.template === 'calls') log('pc → puck', JSON.stringify({ t: 'mic', muted: stateOf(m).muted }));
+  if (S.auto) setMode(m.id, a);
+  else if (S.mode === 'sidekick' && modeForApp(a).id === 'sidekick') setMode('sidekick', a); // pinned Sidekick still follows the app
+  else log('note', `pinned to ${cur().name}, ignored`);
+  renderChrome();
+}
+const logEl = document.getElementById('log');
+function log(dir, text, up) {
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="dir${up ? ' up' : ''}"></span><code></code>`;
+  li.children[0].textContent = up ? '→ ' + dir : dir;
+  li.children[1].textContent = text;
+  logEl.prepend(li); while (logEl.children.length > 80) logEl.lastChild.remove();
+}
+function renderChrome() {
+  document.getElementById('modePill').textContent = cur().name;
+  const ap = document.getElementById('autoPill');
+  ap.textContent = S.auto ? 'Auto' : 'Pinned'; ap.classList.toggle('pinned', !S.auto);
+  APPS.forEach(a => document.getElementById('app-' + a.id).setAttribute('aria-pressed', a === lastCtx));
+}
+
+/* ======================= Sending the lineup to the puck =======================
+   The puck receives one serial line: {"t":"modes","version":N,"modes":[...active modes...]}
+   and answers {"evt":"modes_ok","version":N,"count":K}. Here the line is saved to the shared
+   doc puck/config, where the computer-side tool picks it up and writes it to the puck. */
+const SENT_KEY = KEY + '-sent';
+let sent = null; try { sent = JSON.parse(localStorage.getItem(SENT_KEY) || 'null'); } catch (e) {}
+const puckModes = () => active().map(({ id, name, template, color, triggers, layers, press, settings }) => ({ id, name, template, color, triggers, layers, press, ...(settings ? { settings } : {}) }));
+const isDirty = () => !sent || sent.json !== JSON.stringify(puckModes());
+function syncText() {
+  const n = active().length;
+  if (!sent) return `${n} modes, not saved for the puck yet`;
+  const mins = Math.round((Date.now() - Date.parse(sent.at)) / 60000);
+  const when = mins < 1 ? 'just now' : mins < 60 ? `${mins} min ago` : new Date(sent.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: TZ });
+  return isDirty() ? `Changes not saved yet (last saved ${when})` : `${n} modes saved ${when} (v${sent.version}). The puck picks them up when it's next loaded over USB.`;
+}
+let dbRef = null;
+async function sendToPuck() {
+  const list = puckModes(), version = ((sent && sent.version) || 0) + 1, at = new Date().toISOString();
+  const line = JSON.stringify({ t: 'modes', version, modes: list });
+  log('pc → puck', JSON.stringify({ t: 'modes', version, modes: list.map(m => m.id) }));
+  let stored = false;
+  try { if (dbRef) { await dbRef.doc('puck/config').set({ version, updated_at: at, count: list.length, line, modes: list }); stored = true; } } catch (e) {}
+  sent = { version, at, json: JSON.stringify(list) };
+  try { localStorage.setItem(SENT_KEY, JSON.stringify(sent)); } catch (e) {}
+  log('puck → pc', JSON.stringify({ evt: 'modes_ok', version, count: list.length }));
+  renderNav();
+  const st = document.getElementById('syncState');
+  if (st && !stored) st.textContent = 'Shown in the log only.';
+}
+(async () => {
+  try {
+    const db = window.claude && await window.claude.use('db'); if (!db) return;
+    dbRef = db;
+    const snap = await db.doc('puck/config').get();
+    if (!snap.exists) return;
+    const remote = snap.data();
+    if (!sent || remote.version > sent.version) {
+      // Adopt the lineup last sent to the puck (for example from another device), keeping removed modes from this browser.
+      const ids = new Set(remote.modes.map(m => m.id));
+      const kept = modes.filter(m => !ids.has(m.id)).map(m => ({ ...m, off: true }));
+      modes = [...remote.modes.map(m => ({ ...m, builtin: !!(DEFAULT_MODES.find(d => d.id === m.id) || {}).builtin })), ...kept];
+      sent = { version: remote.version, at: remote.updated_at, json: JSON.stringify(puckModes()) };
+      try { localStorage.setItem(SENT_KEY, JSON.stringify(sent)); } catch (e) {}
+      S.states = {}; save(); addRoll(); lightsToHomeKit(); remapFaces(); idleToHome(); homeWake(); if (!remote.modes.some(m => m.id === 'sidekick')) foldIntoSidekick(true); setTZ(((byId('idle') || {}).settings || {}).tz || TZ_DEFAULT); if (!byId(S.mode) || byId(S.mode).off) setMode('idle');
+      renderNav(); renderEditor();
+    }
+  } catch (e) {}
+})();
+setInterval(() => { const el = document.getElementById('syncState'); if (el) el.textContent = syncText(); }, 30000);
+
+/* ======================= Mode list (left) ======================= */
+let selected = 'calls';
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const navEl = document.getElementById('nav');
+function navSub(m) {
+  if (m.triggers.includes('*')) return 'Any app while you use the computer';
+  const apps = m.triggers.map(t => (APPS.find(a => a.id === t) || { label: t }).label);
+  return apps.length ? apps.join(', ') : 'No app yet';
+}
+function renderNav() {
+  const item = m => `<button type="button" class="navitem" data-id="${esc(m.id)}" aria-current="${m.id === selected}">
+      <span class="dot" style="background:${esc(m.color)}"></span>
+      <span class="txt"><b>${esc(m.name)}</b><span>${esc(navSub(m))}</span></span>
+      ${m.id === S.mode ? '<span class="onpuck">on puck</span>' : '<span></span>'}
+    </button>`;
+  const removed = modes.filter(m => m.off);
+  navEl.innerHTML = `<h3>Built in</h3>${active().filter(m => m.builtin).map(item).join('')}
+    <h3>More modes</h3>${active().filter(m => !m.builtin).map(item).join('')}
+    <button type="button" class="newbtn" id="newMode">+ New mode</button>
+    ${removed.length ? `<h3>Removed from puck</h3><div class="removed">${removed.map(item).join('')}</div>` : ''}
+    <div class="sync">
+      <span class="lab">Puck</span>
+      <p class="note" id="syncState">${esc(syncText())}</p>
+      <button type="button" id="syncBtn" class="${isDirty() ? 'primary' : ''}">Save for puck</button>
+    </div>`;
+  navEl.querySelectorAll('.navitem').forEach(b => b.onclick = () => { selected = b.dataset.id; if (!byId(selected).off) setMode(selected); renderNav(); renderEditor(); });
+  document.getElementById('syncBtn').onclick = sendToPuck;
+  document.getElementById('newMode').onclick = () => {
+    const m = { id: 'm' + Date.now().toString(36), name: 'New mode', template: 'value', color: COLORS[modes.length % COLORS.length], triggers: [],
+      settings: { ...TEMPLATE_DEFAULTS.value }, layers: [L('Adjust', B('usb.volume_down'), B('usb.volume_up'))], press: B('puck.none') };
+    modes.push(m); save(); selected = m.id; setMode(m.id); renderEditor();
+    document.getElementById('ed-name').select();
+  };
+}
+
+/* ======================= Mode settings (right) ======================= */
+const edEl = document.getElementById('editor');
+function actionSelect(id, b, forPress) {
+  let h = `<select id="${id}">`;
+  for (const [sid, sv] of Object.entries(SERVICES)) {
+    h += `<optgroup label="${esc(sv.name)}">`;
+    for (const [aid, [lab]] of Object.entries(sv.actions)) {
+      if (!forPress && sid === 'puck' && aid === 'cycle') continue;
+      const v = sid + '.' + aid;
+      h += `<option value="${v}"${v === b.act ? ' selected' : ''}>${esc(lab)}</option>`;
+    }
+    h += '</optgroup>';
+  }
+  h += '</select>';
+  const [, needs, ph] = actInfo(b.act).info;
+  if (needs) h += `<input type="text" class="arg" id="${id}-arg" value="${esc(b.arg)}" placeholder="${esc(ph)}">`;
+  return h;
+}
+function servicesUsed(m) {
+  const used = new Set();
+  [m.press, ...m.layers.flatMap(l => [l.left, l.right])].forEach(b => { const s = (b.act || '').split('.')[0]; if (s && s !== 'puck') used.add(s); });
+  return [...used];
+}
+function renderEditor() {
+  const m = byId(selected); if (!m) { selected = modes[0].id; return renderEditor(); }
+  const known = APPS.map(a => a.id);
+  const other = m.triggers.filter(t => !known.includes(t));
+  const used = servicesUsed(m);
+  let settings = '';
+  const faceOpts = (cur, withStd) => (withStd ? [`<option value="-1"${!(cur >= 0) ? ' selected' : ''}>Standard (volume clock)</option>`] : []).concat(FACES.map((f, i) => `<option value="${i}"${i === cur ? ' selected' : ''}>${f.name}</option>`)).join('');
+  if (m.builtin) settings = `<p class="note">${TEMPLATE_NAMES[m.template]} screen, built for this mode. Its actions above are yours to change.</p>`;
+  if (m.template === 'idle') settings += `<div class="field"><label for="ed-face">Clock face</label><select id="ed-face">${faceOpts(m.settings ? +m.settings.face : -1, true)}</select><p class="note">Turning still sets the volume; it shows on top of the face.</p></div>
+    <div class="field"><label for="ed-tz">Time zone</label><select id="ed-tz">${TZ_CHOICES.map(([z, n]) => `<option value="${z}"${z === TZ ? ' selected' : ''}>${n} (${z})</option>`).join('')}</select><p class="note">Used by every clock, watch face and finish time on the puck.</p></div>`;
+  else if (m.template === 'sidekick') settings += `<p class="note">Sidekick replaces the per-app modes. The companion app on the computer reads what's in front (app, page, video, call) and sends the puck a short toolbox for it. Turn uses the current tool, double-press switches tool, press does the app's main action. In a call it becomes mute and call volume. When the computer is away (locked, asleep or idle 2 min) the puck goes back to Home.</p>`;
+  else if (m.template === 'settings') settings += `<p class="note">Turn to move between Wi-Fi, Bluetooth, light glow, brightness, time zone and about; press to change one. Wi-Fi status comes from the puck itself, so the simulator shows sample values (${'ARRIS-9269'}). Setting up Wi-Fi again makes the puck open its "Smart Puck setup" network; you finish on your phone at 192.168.4.1, never on the puck.</p>`;
+  else if (!m.builtin) {
+    settings = `<div class="field"><label for="ed-tpl">Type</label><select id="ed-tpl">${['value', 'list', 'timer', 'arm', 'clock', 'printer'].map(t => `<option value="${t}"${t === m.template ? ' selected' : ''}>${TEMPLATE_NAMES[t]}</option>`).join('')}</select></div>`;
+    const st = m.settings;
+    if (m.template === 'value') settings += `<div class="grid3">
+      <div class="field"><label for="ed-min">Min</label><input type="number" id="ed-min" value="${esc(st.min)}"></div>
+      <div class="field"><label for="ed-max">Max</label><input type="number" id="ed-max" value="${esc(st.max)}"></div>
+      <div class="field"><label for="ed-step">Step</label><input type="number" id="ed-step" value="${esc(st.step)}"></div>
+      <div class="field"><label for="ed-val">Start</label><input type="number" id="ed-val" value="${esc(st.value)}"></div>
+      <div class="field"><label for="ed-unit">Unit</label><input type="text" id="ed-unit" value="${esc(st.unit)}"></div></div>`;
+    if (m.template === 'list') settings += `<div class="field"><label for="ed-items">Items, one per line</label><textarea id="ed-items" rows="5">${esc(st.items.join('\n'))}</textarea>
+      <p class="note">On the real puck the companion app or a service would fill this list live.</p></div>`;
+    if (m.template === 'arm') settings += `<div class="grid3">
+      <div class="field"><label for="ed-armstep">Degrees per click</label><input type="number" id="ed-armstep" value="${esc(st.step)}"></div>
+      <div class="field"><label for="ed-armhost">Arm address</label><input type="text" id="ed-armhost" value="${esc(st.host)}"></div></div>
+      <p class="note">Layers 1 to 5 drive base, shoulder, elbow, wrist and gripper in that order.</p>`;
+    if (m.template === 'clock') settings += `<div class="field"><label for="ed-face">Starting face</label><select id="ed-face">${faceOpts(+st.face || 0, false)}</select><p class="note">Turn to flip through faces. Press to make the current one your Home face.</p></div>`;
+    if (m.template === 'printer') settings += `<div class="grid3">
+      <div class="field"><label for="ed-pname">Printer</label><input type="text" id="ed-pname" value="${esc(st.printer)}"></div>
+      <div class="field"><label for="ed-pfile">Sample job</label><input type="text" id="ed-pfile" value="${esc(st.file)}"></div></div>
+      <p class="note">Turn to flip between progress, temperatures and layers. On the real puck these come live from the printer every second. Live data shows with a Live tag when the PC monitor writes it here, or when you open this simulator from the printer bridge at http://localhost:8765/ (this hosted page isn't allowed to reach your computer directly). Otherwise it plays a sample job marked Simulated.</p>`;
+    if (m.template === 'timer') settings += `<div class="field"><label for="ed-mins">Default minutes</label><input type="number" id="ed-mins" value="${esc(st.minutes)}"></div>`;
+  }
+  edEl.innerHTML = `
+    ${m.off ? '<p class="note banner">Removed from the puck. It stays here so you can add it back.</p>' : ''}
+    ${m.id === 'idle' ? '<p class="note">Home can\'t be removed because the puck falls back to it when nothing else matches.</p>' : ''}
+    <div class="namerow">
+      <div class="field"><label for="ed-name">Mode name</label><input type="text" id="ed-name" value="${esc(m.name)}"></div>
+      <div class="swatches" role="group" aria-label="Color">${COLORS.map(c => `<button type="button" class="sw" data-c="${c}" aria-pressed="${c === m.color}" aria-label="Color ${c}" style="background:${c}"></button>`).join('')}</div>
+    </div>
+
+    <div class="field">
+      <span class="lab">Turns on when these are in front</span>
+      <div class="chips">${APPS.map(a => `<button type="button" class="chip" data-app="${a.id}" aria-pressed="${m.triggers.includes(a.id)}">${esc(a.label)}</button>`).join('')}</div>
+      <input type="text" id="ed-other" value="${esc(other.join(', '))}" placeholder="Other apps or sites, e.g. teams, notion.so">
+    </div>
+
+    <div class="field">
+      <span class="lab">Dial</span>
+      ${m.layers.map((l, i) => `<div class="layer">
+        <div class="layerhead"><span class="n">Layer ${i + 1}</span><input type="text" id="ed-l${i}-name" value="${esc(l.name)}" aria-label="Layer ${i + 1} name">
+          ${m.layers.length > 1 ? `<button type="button" class="small" data-rmlayer="${i}">Remove</button>` : '<span></span>'}</div>
+        <div class="act"><label for="ed-l${i}-left">Turn left</label>${actionSelect(`ed-l${i}-left`, l.left)}</div>
+        <div class="act"><label for="ed-l${i}-right">Turn right</label>${actionSelect(`ed-l${i}-right`, l.right)}</div>
+      </div>`).join('')}
+      <div class="row"><button type="button" class="small" id="ed-addlayer">+ Add layer</button></div>
+      <p class="note">Layers let one mode do several jobs. Set Press to "Next layer" to switch between them.</p>
+      <div class="act"><label for="ed-press">Press</label>${actionSelect('ed-press', m.press, true)}</div>
+      <div class="act"><span>Hold</span><span class="note">Opens the mode menu (same in every mode)</span></div>
+    </div>
+
+    <div class="field"><span class="lab">Screen</span>${settings}</div>
+
+    <div class="field">
+      <span class="lab">Connections used</span>
+      ${used.length ? used.map(id => { const s = SERVICES[id]; return `<div class="svc"><div class="top"><b>${esc(s.name)}</b><span class="lvl ${s.lvl}">${LVL[s.lvl]}</span></div><span class="route">${esc(s.route)}</span><p>${esc(s.how)}</p></div>`; }).join('') : '<p class="note">None yet. This mode only changes what the puck shows.</p>'}
+    </div>
+
+    <div class="field">
+      <div class="row">
+        <button type="button" id="ed-dup">Duplicate</button>
+        ${m.id === 'idle' ? '' : m.off ? '<button type="button" id="ed-restore">Add back to puck</button>' : '<button type="button" id="ed-remove" class="danger">Remove from puck</button>'}
+        ${m.builtin ? '' : '<button type="button" id="ed-del" class="danger">Delete for good</button>'}
+        <button type="button" id="ed-copy">Copy settings</button>
+        <button type="button" id="ed-reset">Reset all</button>
+      </div>
+      <p class="toast" id="ed-toast" aria-live="polite"></p>
+      <textarea id="ed-json" rows="6" readonly hidden aria-label="Settings JSON"></textarea>
+    </div>`;
+  bindEditor(m);
+}
+function changed(m, opts = {}) {
+  save();
+  if (opts.state) resetState(m);
+  if (opts.editor) renderEditor();
+  renderNav(); renderChrome();
+}
+function bindEditor(m) {
+  const $ = id => document.getElementById(id);
+  $('ed-name').oninput = e => { m.name = e.target.value || 'Untitled'; changed(m); };
+  edEl.querySelectorAll('.sw').forEach(b => b.onclick = () => { m.color = b.dataset.c; changed(m, { editor: true }); });
+  edEl.querySelectorAll('.chip').forEach(b => b.onclick = () => {
+    const id = b.dataset.app; m.triggers = m.triggers.includes(id) ? m.triggers.filter(t => t !== id) : [...m.triggers, id];
+    changed(m, { editor: true });
+  });
+  $('ed-other').onchange = e => {
+    const known = APPS.map(a => a.id);
+    m.triggers = [...m.triggers.filter(t => known.includes(t)), ...e.target.value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)];
+    changed(m);
+  };
+  const bindAct = (id, get, set) => {
+    $(id).onchange = e => { const needs = actInfo(e.target.value).info[1]; set({ act: e.target.value, ...(needs ? { arg: get().arg || actInfo(e.target.value).info[2] } : {}) }); changed(m, { editor: true }); };
+    if ($(id + '-arg')) $(id + '-arg').oninput = e => { get().arg = e.target.value; save(); };
+  };
+  m.layers.forEach((l, i) => {
+    $(`ed-l${i}-name`).oninput = e => { l.name = e.target.value; save(); };
+    bindAct(`ed-l${i}-left`, () => l.left, v => l.left = v);
+    bindAct(`ed-l${i}-right`, () => l.right, v => l.right = v);
+  });
+  edEl.querySelectorAll('[data-rmlayer]').forEach(b => b.onclick = () => { m.layers.splice(+b.dataset.rmlayer, 1); changed(m, { editor: true }); });
+  $('ed-addlayer').onclick = () => { m.layers.push(L(`Layer ${m.layers.length + 1}`, B('puck.none'), B('puck.none'))); if (m.press.act === 'puck.none') m.press = B('puck.cycle'); changed(m, { editor: true }); };
+  bindAct('ed-press', () => m.press, v => m.press = v);
+  if ($('ed-tpl')) $('ed-tpl').onchange = e => { m.template = e.target.value; m.settings = { ...TEMPLATE_DEFAULTS[m.template] }; changed(m, { state: true, editor: true }); };
+  const num = (id, k) => { if ($(id)) $(id).onchange = e => { m.settings[k] = +e.target.value; changed(m, { state: true }); }; };
+  num('ed-min', 'min'); num('ed-max', 'max'); num('ed-step', 'step'); num('ed-val', 'value'); num('ed-mins', 'minutes'); num('ed-armstep', 'step');
+  if ($('ed-pname')) $('ed-pname').oninput = e => { m.settings.printer = e.target.value; save(); };
+  if ($('ed-pfile')) $('ed-pfile').oninput = e => { m.settings.file = e.target.value; save(); };
+  if ($('ed-tz')) $('ed-tz').onchange = e => { m.settings = { ...(m.settings || {}), tz: e.target.value }; setTZ(e.target.value); changed(m); };
+  if ($('ed-face')) $('ed-face').onchange = e => { m.settings = { ...(m.settings || {}), face: +e.target.value, faceSet: 3 }; changed(m, { state: m.template === 'clock' }); };
+  if ($('ed-armhost')) $('ed-armhost').oninput = e => { m.settings.host = e.target.value; save(); };
+  if ($('ed-unit')) $('ed-unit').oninput = e => { m.settings.unit = e.target.value; save(); };
+  if ($('ed-items')) $('ed-items').oninput = e => { m.settings.items = e.target.value.split('\n').map(s => s.trim()).filter(Boolean); save(); };
+  $('ed-dup').onclick = () => {
+    const c = JSON.parse(JSON.stringify(m)); c.id = 'm' + Date.now().toString(36); c.name = m.name + ' copy'; c.builtin = false; c.triggers = [];
+    if (!TEMPLATE_DEFAULTS[c.template]) { c.template = 'value'; c.settings = { ...TEMPLATE_DEFAULTS.value }; }
+    modes.push(c); selected = c.id; setMode(c.id); changed(c, { editor: true });
+  };
+  if ($('ed-remove')) $('ed-remove').onclick = () => {
+    m.off = true; if (S.mode === m.id) setMode('idle'); changed(m, { editor: true });
+  };
+  if ($('ed-restore')) $('ed-restore').onclick = () => { delete m.off; setMode(m.id); changed(m, { editor: true }); };
+  if ($('ed-del')) $('ed-del').onclick = () => {
+    modes = modes.filter(x => x !== m); resetState(m); selected = 'idle';
+    if (S.mode === m.id) setMode('idle'); changed(byId('idle'), { editor: true });
+  };
+  $('ed-copy').onclick = () => {
+    const json = JSON.stringify(modes, null, 2), ta = $('ed-json'), toast = $('ed-toast');
+    ta.value = json; ta.hidden = false;
+    const fallback = () => { ta.focus(); ta.select(); toast.textContent = 'Select all and copy the text below.'; };
+    try { navigator.clipboard.writeText(json).then(() => { toast.textContent = 'Copied. Save it as lineup.json and send it with firmware/tools/send_modes.py.'; }, fallback); } catch (e) { fallback(); }
+  };
+  $('ed-reset').onclick = e => {
+    const b = e.target;
+    if (b.dataset.armed) { modes = JSON.parse(JSON.stringify(DEFAULT_MODES)); S.states = {}; selected = 'calls'; setMode('calls'); changed(byId('calls'), { editor: true }); }
+    else { b.dataset.armed = '1'; b.textContent = 'Click again to reset'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = 'Reset all'; } }, 3000); }
+  };
+}
+
+/* ======================= Virtual encoder: ring drag, wheel, screen press/hold, keys ======================= */
+const ringEl = document.getElementById('ring');
+const DETENT = 18; // KY-040: 20 detents per turn
+let drag = null;
+ringEl.addEventListener('pointerdown', e => {
+  const r = puckEl.getBoundingClientRect();
+  drag = { cx: r.left + r.width / 2, cy: r.top + r.height / 2, acc: 0 };
+  drag.last = Math.atan2(e.clientY - drag.cy, e.clientX - drag.cx) * 180 / Math.PI;
+  ringEl.setPointerCapture(e.pointerId); ringEl.classList.add('dragging');
+});
+ringEl.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const a = Math.atan2(e.clientY - drag.cy, e.clientX - drag.cx) * 180 / Math.PI;
+  let d = a - drag.last; if (d > 180) d -= 360; if (d < -180) d += 360;
+  drag.last = a; drag.acc += d;
+  while (drag.acc >= DETENT) { drag.acc -= DETENT; rotate(1); }
+  while (drag.acc <= -DETENT) { drag.acc += DETENT; rotate(-1); }
+});
+const endDrag = () => { drag = null; ringEl.classList.remove('dragging'); };
+ringEl.addEventListener('pointerup', endDrag); ringEl.addEventListener('pointercancel', endDrag);
+
+let wheelAcc = 0;
+puckEl.addEventListener('wheel', e => {
+  e.preventDefault(); wheelAcc += e.deltaY;
+  while (wheelAcc >= 40) { wheelAcc -= 40; rotate(1); }
+  while (wheelAcc <= -40) { wheelAcc += 40; rotate(-1); }
+}, { passive: false });
+
+let holdTimer = null, held = false;
+cv.addEventListener('pointerdown', () => { held = false; holdTimer = setTimeout(() => { held = true; hold(); }, 600); });
+cv.addEventListener('pointerup', () => { clearTimeout(holdTimer); if (!held) press(); });
+cv.addEventListener('pointerleave', () => clearTimeout(holdTimer));
+
+document.querySelectorAll('[data-panel]').forEach(b => b.onclick = () => setPanel(+b.dataset.panel));
+let savedPanel = 240; try { savedPanel = +localStorage.getItem('puck-panel') === 412 ? 412 : 240; } catch (e) {}
+setPanel(savedPanel);
+applyBrightness(+(((byId('settings') || {}).settings) || {}).brightness || 100);
+document.getElementById('bL').onclick = () => rotate(-1);
+document.getElementById('bR').onclick = () => rotate(1);
+document.getElementById('bP').onclick = press;
+document.getElementById('bH').onclick = hold;
+document.getElementById('bD').onclick = doublePress;
+document.addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('button, input, textarea, select')) return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); rotate(1); }
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); rotate(-1); }
+  else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); press(); }
+  else if (e.key === 'h' || e.key === 'H') hold();
+  else if (e.key === 'd' || e.key === 'D') doublePress();
+});
+
+/* Start in a live call so the red ring is the first thing you see. */
+if (byId('calls')) stateOf(byId('calls')).muted = false;
+focusApp(APPS[1]);
+selected = S.mode;
+renderNav(); renderEditor();
+requestAnimationFrame(frame);
+playBoot(bootPick); // power-on
+</script>
