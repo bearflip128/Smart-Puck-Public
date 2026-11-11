@@ -42,7 +42,7 @@ Printed on a [Bambu A1 mini](https://link.amazon/B0hqkkMkx) in [black](https://l
 ## Build your own
 
 1. **Get the parts.** Everything is listed in [PARTS.md](PARTS.md).
-2. **Print the case.** `hardware/stl/puck_tub.stl` and `hardware/stl/puck_lid.stl`, flat on the bed with no supports. Print settings and the knob fit test are in [hardware/README.md](hardware/README.md).
+2. **Print the case.** `hardware/stl/puck_tub.stl` and `hardware/stl/puck_lid.stl`, flat on the bed. Print settings and the knob fit test are in [hardware/README.md](hardware/README.md).
 3. **Flash the firmware** onto the display over USB before you close it up. See [firmware/README.md](firmware/README.md).
 4. **Wire and assemble it.** The [assembly guide (PDF)](docs/assembly-guide.pdf) walks through the wiring, a multimeter check and assembly step by step. Plan on about an hour, most of it soldering.
 5. **Set it up.** Join the puck's **Smart Puck setup** Wi-Fi network from your phone to connect it to your Wi-Fi, then pair it over Bluetooth from **Settings > Bluetooth**.
