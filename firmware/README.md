@@ -73,10 +73,6 @@ The puck reads print progress straight from a Bambu Lab printer on your network 
 
 Bambu printers accept only one local MQTT connection at a time, so close any other local tool that connects to the printer the same way.
 
-### Robot arm
-
-Robot arm mode drives a 6-joint arm (Base, Shoulder, Elbow, Wrist, Roll, Gripper) through an armctl-compatible HTTP server (`POST /login`, `GET /api/telemetry`, `POST /api/goal`). Turning moves the current joint 5° per click; a Safety layer arms and disarms the arm, and it disarms itself after 2 minutes without a turn. `tools/arm_link.py` saves the server address and login on the puck so it drives the arm over Wi-Fi; `tools/arm_bridge.py` relays from a computer over USB instead. This is an advanced feature and needs your own arm server.
-
 ## Over-the-air updates
 
 After the first USB flash, update over Wi-Fi:
@@ -117,11 +113,10 @@ Computer to puck:
 | `src/ble.*` | Bluetooth keyboard, media keys and scroll for two computers |
 | `src/spotify.*` | Spotify Web API client |
 | `src/printer.*` | Bambu printer over local MQTT, plus the puck's web page and status JSON |
-| `src/arm.*` | Robot arm client |
 | `src/ota.*` | Over-the-air updates |
 | `src/leds.*` | RGB glow |
 | `src/evlog.*` | Event log shown at `/log` |
-| `tools/` | Companion apps, Spotify link, monitor and arm tools |
+| `tools/` | Companion apps, Spotify link, serial monitor and lineup sender |
 
 ## Pins
 

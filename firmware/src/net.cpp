@@ -24,7 +24,7 @@ static volatile time_t syncedAt = 0;
 static uint32_t nextTimeTry = 0;  // millis() of the next fallback attempt while the clock isn't set
 
 // A router that hands out no DNS server (or the setup network's own address, left over after the
-// setup page was used) breaks every name lookup: NTP, Spotify, the arm's public address. Keep the
+// setup page was used) breaks every name lookup: NTP and Spotify. Keep the
 // router's server and add public ones behind it.
 static void fixDns() {
   IPAddress d0 = WiFi.dnsIP(0);

@@ -276,9 +276,6 @@ const SERVICES = {
   obs: { name: 'OBS Studio', tag: 'OBS', route: 'Puck → companion → OBS WebSocket', lvl: 'easy',
     how: 'OBS has a built-in WebSocket server for switching scenes, muting sources and recording.',
     actions: { scene_next: ['Next scene'], scene_prev: ['Previous scene'], record: ['Start / stop recording'], mute_source: ['Mute source', 1, 'Mic/Aux'] } },
-  robotarm: { name: 'Robot arm', tag: 'Wi-Fi', route: 'Puck → Wi-Fi → arm controller', lvl: 'mod',
-    how: 'The puck sends each move straight to the arm\'s controller as a short message over Wi-Fi (WebSocket or HTTP). Works with an ESP32 or Arduino arm on Wi-Fi, or a Raspberry Pi running ROS through a small bridge. Joint limits are checked on the puck before anything is sent.',
-    actions: { jog_minus: ['Move joint −', 1, 'shoulder'], jog_plus: ['Move joint +', 1, 'shoulder'], grip_open: ['Open gripper'], grip_close: ['Close gripper'], home: ['Go to home pose'], save_pose: ['Save pose', 1, 'pick'], play_pose: ['Move to pose', 1, 'pick'], stop: ['Stop all motors'] } },
   bambu: { name: 'Bambu printer', tag: 'Wi-Fi', route: 'Puck → Wi-Fi → printer (local MQTT)', lvl: 'mod',
     how: 'Reads print status straight from the printer on your network, using its IP, serial number and LAN access code. Status reading works with the access code; controls like the light or pause may need LAN Only and Developer Mode on recent firmware.',
     actions: { light: ['Toggle chamber light'], pause: ['Pause print'], resume: ['Resume print'], speed_up: ['Faster speed profile'], speed_down: ['Slower speed profile'] } },
@@ -351,12 +348,6 @@ const DEFAULT_MODES = [
   { id: 'lights', name: 'Lights', template: 'list', color: '#facc15', triggers: [],
     settings: { items: ['Light 1', 'Light 2', 'Light 3', 'All lights'] },
     layers: [L('Lights', B('puck.none'), B('puck.none'))], press: B('homekit.button') },
-  { id: 'arm', name: 'Robot arm', template: 'arm', color: '#fb7185', triggers: [],
-    settings: { step: 5, host: 'arm.local' },
-    layers: [L('Base', B('robotarm.jog_minus', 'base'), B('robotarm.jog_plus', 'base')), L('Shoulder', B('robotarm.jog_minus', 'shoulder'), B('robotarm.jog_plus', 'shoulder')),
-      L('Elbow', B('robotarm.jog_minus', 'elbow'), B('robotarm.jog_plus', 'elbow')), L('Wrist', B('robotarm.jog_minus', 'wrist'), B('robotarm.jog_plus', 'wrist')),
-      L('Roll', B('robotarm.jog_minus', 'roll'), B('robotarm.jog_plus', 'roll')), L('Gripper', B('robotarm.grip_close'), B('robotarm.grip_open'))],
-    press: B('puck.cycle') },
   { id: 'faces', name: 'Watch faces', template: 'clock', color: '#d6b36a', triggers: [],
     settings: { face: 0, faceSet: 3 }, layers: [L('Faces', B('puck.none'), B('puck.none'))], press: B('puck.none') },
   { id: 'printer', name: '3D printer', template: 'printer', color: '#34d399', triggers: ['bambustudio'],
@@ -366,7 +357,7 @@ const DEFAULT_MODES = [
     settings: { items: ['Camera', 'Screen share', 'Be right back'] },
     layers: [L('Scenes', B('obs.scene_prev'), B('obs.scene_next'))], press: B('obs.record') }
 ];
-const TEMPLATE_DEFAULTS = { value: { min: 0, max: 100, step: 5, unit: '%', value: 50 }, list: { items: ['First', 'Second', 'Third'] }, timer: { minutes: 25 }, arm: { step: 5, host: 'arm.local' }, clock: { face: 0, faceSet: 3 }, printer: { printer: 'Bambu P1S', file: 'print.3mf', hours: 2, layers: 300 } };
+const TEMPLATE_DEFAULTS = { value: { min: 0, max: 100, step: 5, unit: '%', value: 50 }, list: { items: ['First', 'Second', 'Third'] }, timer: { minutes: 25 }, clock: { face: 0, faceSet: 3 }, printer: { printer: 'Bambu P1S', file: 'print.3mf', hours: 2, layers: 300 } };
 const COLORS = ['#4fb3d9', '#39d98a', '#ffb547', '#ff3b3f', '#a78bfa', '#f472b6', '#facc15', '#2dd4bf'];
 
 /* ======================= Saved settings (this browser only) ======================= */
@@ -379,21 +370,12 @@ function loadModes() {
   return JSON.parse(JSON.stringify(DEFAULT_MODES));
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(modes)); localStorage.setItem(KEY + '-seen', JSON.stringify(DEFAULT_MODES.map(m => m.id))); } catch (e) {} }
-let modes = loadModes();
+let modes = loadModes().filter(m => m.template !== 'arm');  // robot arm mode was removed
 try { // add modes that shipped after this browser last saved, without bringing back ones the user deleted
   const seen = JSON.parse(localStorage.getItem(KEY + '-seen') || 'null') || (localStorage.getItem(KEY) ? ['idle','calls','typing','media','editing','design','present','focus','windows','unread','lights','stream'] : null);
   if (seen) DEFAULT_MODES.forEach(d => { if (!seen.includes(d.id) && !modes.some(m => m.id === d.id)) modes.push(JSON.parse(JSON.stringify(d))); });
 } catch (e) {}
 const byId = id => modes.find(m => m.id === id);
-// The real arm has a wrist Roll joint (added after the first lineups); give saved arm modes that lack it a Roll layer before Gripper.
-function addRoll() {
-  const m = byId('arm'), d = DEFAULT_MODES.find(x => x.id === 'arm');
-  if (!m || m.template !== 'arm' || m.layers.some(l => l.name === 'Roll')) return;
-  const g = m.layers.findIndex(l => l.name === 'Gripper');
-  m.layers.splice(g < 0 ? m.layers.length : g, 0, JSON.parse(JSON.stringify(d.layers.find(l => l.name === 'Roll'))));
-  save();
-}
-addRoll();
 // Desk lights: LIFX bulbs in Apple Home, switched on and off through HomeKit so Home stays in sync.
 // Move a lights mode still on the old Home Assistant placeholder (or the brief LIFX-direct version) to HomeKit buttons.
 function lightsToHomeKit() {
@@ -938,50 +920,6 @@ const TEMPLATES = {
       label(pressLabel(m), C + 128, 14, COL.dim, 500, 240);
     }
   },
-  arm: {
-    // [name, min, max, start] in degrees; gripper is jaw opening in mm. Layers map to joints by name
-    // (same as the firmware), so a lineup without some joints still works.
-    joints: [['Base', -180, 180, 20], ['Shoulder', 0, 170, 60], ['Elbow', -150, 0, -75], ['Wrist', -90, 90, 15], ['Roll', -150, 150, 0], ['Gripper', 0, 60, 30]],
-    joint(m, s) { const l = m.layers[s.layer]; return l ? this.joints.findIndex(j => j[0] === l.name) : -1; },
-    init() { return { a: this.joints.map(j => j[3]), touched: -1e9 }; },
-    rotate(s, d, m) {
-      const k = this.joint(m, s), j = this.joints[k]; if (!j) return;
-      const step = j[0] === 'Gripper' ? 5 : (+m.settings.step || 5);
-      s.a[k] = clamp(s.a[k] + d * step, j[1], j[2]); s.touched = now();
-    },
-    report(s, m) { const k = m ? this.joint(m, s) : s.layer, j = this.joints[k]; return j ? { joint: j[0].toLowerCase(), value: s.a[k] } : {}; },
-    draw(s, m) {
-      if (s.a.length < this.joints.length) s.a = this.joints.map((j, i) => s.a[i] ?? j[3]);
-      const [base, sh, el, wr, roll, gr] = s.a, J = this.joints, cur = this.joint(m, s);
-      const col = i => i === cur ? m.color : COL.white;
-      // base rotation as a marker on the outer ring (top view)
-      arc(192, 4, 0, 360, COL.faint);
-      arc(192, 12, base - 90 - 5, base - 90 + 5, cur === 0 ? m.color : COL.dim);
-      label(`${m.name} · ${m.settings.host || 'arm.local'}`, 96, 15, COL.dim, 500, 230);
-      const j = J[cur];
-      label(j ? j[0] : layerName(m, s), 124, 20, m.color, 700);
-      if (j) label(j[0] === 'Gripper' ? `${gr} mm` : `${s.a[cur]}°`, 160, 38, COL.white, 600);
-      // side view: shoulder, elbow, wrist, gripper
-      const ox = C - 34, oy = C + 100, L1 = 80, L2 = 66, L3 = 22;
-      const a1 = -sh, a2 = a1 - el, a3 = a2 - wr;
-      const p1 = [ox + L1 * Math.cos(rad(a1)), oy + L1 * Math.sin(rad(a1))];
-      const p2 = [p1[0] + L2 * Math.cos(rad(a2)), p1[1] + L2 * Math.sin(rad(a2))];
-      const p3 = [p2[0] + L3 * Math.cos(rad(a3)), p2[1] + L3 * Math.sin(rad(a3))];
-      g.save(); g.lineCap = 'round';
-      g.fillStyle = cur === 0 ? m.color : COL.dim; g.fillRect(ox - 22, oy + 4, 44, 8);
-      const seg = (a, b, w, c) => { g.strokeStyle = c; g.lineWidth = w; g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.stroke(); };
-      seg([ox, oy + 4], [ox, oy], 8, cur === 0 ? m.color : COL.dim);
-      seg([ox, oy], p1, 9, col(1)); seg(p1, p2, 7, col(2)); seg(p2, p3, 5, col(3));
-      const jaw = 4 + gr / 6, n = [Math.cos(rad(a3 + 90)), Math.sin(rad(a3 + 90))], f = [Math.cos(rad(a3)), Math.sin(rad(a3))];
-      for (const sgn of [1, -1]) { const b0 = [p3[0] + n[0] * jaw * sgn, p3[1] + n[1] * jaw * sgn]; seg(b0, [b0[0] + f[0] * 14, b0[1] + f[1] * 14], 4, col(5)); }
-      // wrist roll: a small dial at the wrist, its tick turned by the roll angle
-      g.strokeStyle = col(4); g.lineWidth = 2; g.beginPath(); g.arc(p2[0], p2[1], 11, 0, Math.PI * 2); g.stroke();
-      seg(p2, [p2[0] + 11 * Math.cos(rad(roll - 90)), p2[1] + 11 * Math.sin(rad(roll - 90))], 3, col(4));
-      for (const [p, i] of [[[ox, oy], 1], [p1, 2], [p2, 3]]) { g.fillStyle = i - 1 === cur || i === cur ? m.color : '#000'; g.strokeStyle = col(i); g.lineWidth = 2; g.beginPath(); g.arc(p[0], p[1], 5, 0, Math.PI * 2); g.fill(); g.stroke(); }
-      g.restore();
-      dots(m.layers.length, cur, C + 132);
-    }
-  },
   clock: {
     init: m => ({ face: +m.settings.face || 0, touched: -1e9, pressed: -1e9 }),
     rotate(s, d) { s.face = ((s.face + d) % FACES.length + FACES.length) % FACES.length; s.touched = now(); },
@@ -1240,7 +1178,7 @@ const TEMPLATES = {
     }
   }
 };
-const TEMPLATE_NAMES = { sidekick: 'Sidekick', settings: 'Settings', idle: 'Clock', calls: 'Call', typing: 'Typing', media: 'Now playing', editing: 'Jog wheel', value: 'Value dial', list: 'List picker', timer: 'Timer', arm: 'Robot arm', clock: 'Watch face', printer: '3D print status' };
+const TEMPLATE_NAMES = { sidekick: 'Sidekick', settings: 'Settings', idle: 'Clock', calls: 'Call', typing: 'Typing', media: 'Now playing', editing: 'Jog wheel', value: 'Value dial', list: 'List picker', timer: 'Timer', clock: 'Watch face', printer: '3D print status' };
 
 /* ======================= Runtime ======================= */
 const S = { mode: 'calls', auto: true, menu: null, fade: 0, detents: 0, states: {} };
@@ -1660,7 +1598,7 @@ async function sendToPuck() {
       modes = [...remote.modes.map(m => ({ ...m, builtin: !!(DEFAULT_MODES.find(d => d.id === m.id) || {}).builtin })), ...kept];
       sent = { version: remote.version, at: remote.updated_at, json: JSON.stringify(puckModes()) };
       try { localStorage.setItem(SENT_KEY, JSON.stringify(sent)); } catch (e) {}
-      S.states = {}; save(); addRoll(); lightsToHomeKit(); remapFaces(); idleToHome(); homeWake(); if (!remote.modes.some(m => m.id === 'sidekick')) foldIntoSidekick(true); setTZ(((byId('idle') || {}).settings || {}).tz || TZ_DEFAULT); if (!byId(S.mode) || byId(S.mode).off) setMode('idle');
+      S.states = {}; save(); lightsToHomeKit(); remapFaces(); idleToHome(); homeWake(); if (!remote.modes.some(m => m.id === 'sidekick')) foldIntoSidekick(true); setTZ(((byId('idle') || {}).settings || {}).tz || TZ_DEFAULT); if (!byId(S.mode) || byId(S.mode).off) setMode('idle');
       renderNav(); renderEditor();
     }
   } catch (e) {}
@@ -1738,7 +1676,7 @@ function renderEditor() {
   else if (m.template === 'sidekick') settings += `<p class="note">Sidekick replaces the per-app modes. The companion app on the computer reads what's in front (app, page, video, call) and sends the puck a short toolbox for it. Turn uses the current tool, double-press switches tool, press does the app's main action. In a call it becomes mute and call volume. When the computer is away (locked, asleep or idle 2 min) the puck goes back to Home.</p>`;
   else if (m.template === 'settings') settings += `<p class="note">Turn to move between Wi-Fi, Bluetooth, light glow, brightness, time zone and about; press to change one. Wi-Fi status comes from the puck itself, so the simulator shows sample values (${'ARRIS-9269'}). Setting up Wi-Fi again makes the puck open its "Smart Puck setup" network; you finish on your phone at 192.168.4.1, never on the puck.</p>`;
   else if (!m.builtin) {
-    settings = `<div class="field"><label for="ed-tpl">Type</label><select id="ed-tpl">${['value', 'list', 'timer', 'arm', 'clock', 'printer'].map(t => `<option value="${t}"${t === m.template ? ' selected' : ''}>${TEMPLATE_NAMES[t]}</option>`).join('')}</select></div>`;
+    settings = `<div class="field"><label for="ed-tpl">Type</label><select id="ed-tpl">${['value', 'list', 'timer', 'clock', 'printer'].map(t => `<option value="${t}"${t === m.template ? ' selected' : ''}>${TEMPLATE_NAMES[t]}</option>`).join('')}</select></div>`;
     const st = m.settings;
     if (m.template === 'value') settings += `<div class="grid3">
       <div class="field"><label for="ed-min">Min</label><input type="number" id="ed-min" value="${esc(st.min)}"></div>
@@ -1748,10 +1686,6 @@ function renderEditor() {
       <div class="field"><label for="ed-unit">Unit</label><input type="text" id="ed-unit" value="${esc(st.unit)}"></div></div>`;
     if (m.template === 'list') settings += `<div class="field"><label for="ed-items">Items, one per line</label><textarea id="ed-items" rows="5">${esc(st.items.join('\n'))}</textarea>
       <p class="note">On the real puck the companion app or a service would fill this list live.</p></div>`;
-    if (m.template === 'arm') settings += `<div class="grid3">
-      <div class="field"><label for="ed-armstep">Degrees per click</label><input type="number" id="ed-armstep" value="${esc(st.step)}"></div>
-      <div class="field"><label for="ed-armhost">Arm address</label><input type="text" id="ed-armhost" value="${esc(st.host)}"></div></div>
-      <p class="note">Layers 1 to 5 drive base, shoulder, elbow, wrist and gripper in that order.</p>`;
     if (m.template === 'clock') settings += `<div class="field"><label for="ed-face">Starting face</label><select id="ed-face">${faceOpts(+st.face || 0, false)}</select><p class="note">Turn to flip through faces. Press to make the current one your Home face.</p></div>`;
     if (m.template === 'printer') settings += `<div class="grid3">
       <div class="field"><label for="ed-pname">Printer</label><input type="text" id="ed-pname" value="${esc(st.printer)}"></div>
@@ -1840,12 +1774,11 @@ function bindEditor(m) {
   bindAct('ed-press', () => m.press, v => m.press = v);
   if ($('ed-tpl')) $('ed-tpl').onchange = e => { m.template = e.target.value; m.settings = { ...TEMPLATE_DEFAULTS[m.template] }; changed(m, { state: true, editor: true }); };
   const num = (id, k) => { if ($(id)) $(id).onchange = e => { m.settings[k] = +e.target.value; changed(m, { state: true }); }; };
-  num('ed-min', 'min'); num('ed-max', 'max'); num('ed-step', 'step'); num('ed-val', 'value'); num('ed-mins', 'minutes'); num('ed-armstep', 'step');
+  num('ed-min', 'min'); num('ed-max', 'max'); num('ed-step', 'step'); num('ed-val', 'value'); num('ed-mins', 'minutes');
   if ($('ed-pname')) $('ed-pname').oninput = e => { m.settings.printer = e.target.value; save(); };
   if ($('ed-pfile')) $('ed-pfile').oninput = e => { m.settings.file = e.target.value; save(); };
   if ($('ed-tz')) $('ed-tz').onchange = e => { m.settings = { ...(m.settings || {}), tz: e.target.value }; setTZ(e.target.value); changed(m); };
   if ($('ed-face')) $('ed-face').onchange = e => { m.settings = { ...(m.settings || {}), face: +e.target.value, faceSet: 3 }; changed(m, { state: m.template === 'clock' }); };
-  if ($('ed-armhost')) $('ed-armhost').oninput = e => { m.settings.host = e.target.value; save(); };
   if ($('ed-unit')) $('ed-unit').oninput = e => { m.settings.unit = e.target.value; save(); };
   if ($('ed-items')) $('ed-items').oninput = e => { m.settings.items = e.target.value.split('\n').map(s => s.trim()).filter(Boolean); save(); };
   $('ed-dup').onclick = () => {

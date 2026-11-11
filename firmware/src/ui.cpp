@@ -35,7 +35,7 @@ struct Layer {
   const char *name;
   Bind left, right;
 };
-enum Tpl { IDLE, CALLS, TYPING, MEDIA, EDITING, VALUE, LIST, TIMER, ARM, CLOCKFACE, PRINTER, SETTINGS, SIDEKICK };
+enum Tpl { IDLE, CALLS, TYPING, MEDIA, EDITING, VALUE, LIST, TIMER, CLOCKFACE, PRINTER, SETTINGS, SIDEKICK };
 
 struct Mode {
   const char *id, *name;
@@ -46,7 +46,7 @@ struct Mode {
   Bind press;
   // Template settings (only the ones a template reads are set).
   int min = 0, max = 100, step = 5, value = 50, minutes = 25, face = -1;
-  const char *unit = "%", *host = "arm.local";
+  const char *unit = "%";
   const char *printer = "Printer", *file = "print.3mf";  // printer
   float hours = 2;
   int totalLayers = 300;
@@ -105,17 +105,6 @@ static void buildModes() {
        B("homeassistant.toggle", "light.desk")};
   m.min = 0, m.max = 100, m.step = 5, m.value = 60;
   modes.push_back(m);
-  m = {"arm", "Robot arm", ARM, 0xfb7185, {},
-       {{"Safety", B("robotarm.disarm"), B("robotarm.arm")},
-        {"Base", B("robotarm.jog_minus", "base"), B("robotarm.jog_plus", "base")},
-        {"Shoulder", B("robotarm.jog_minus", "shoulder"), B("robotarm.jog_plus", "shoulder")},
-        {"Elbow", B("robotarm.jog_minus", "elbow"), B("robotarm.jog_plus", "elbow")},
-        {"Wrist", B("robotarm.jog_minus", "wrist"), B("robotarm.jog_plus", "wrist")},
-        {"Roll", B("robotarm.jog_minus", "roll"), B("robotarm.jog_plus", "roll")},
-        {"Gripper", B("robotarm.grip_close"), B("robotarm.grip_open")}},
-       B("puck.cycle")};
-  m.step = 5;
-  modes.push_back(m);
   m = {"faces", "Watch faces", CLOCKFACE, 0xd6b36a, {}, {{"Faces", B("puck.none"), B("puck.none")}}, B("puck.none")};
   m.face = 0;
   modes.push_back(m);
@@ -152,24 +141,6 @@ static uint32_t nowMs() { return millis(); }
 static bool recent(uint32_t at, uint32_t ms) { return at && nowMs() - at < ms; }
 static float clampf(float v, float a, float b) { return v < a ? a : v > b ? b : v; }
 
-// Matches armctl (the arm server, config/arm.yaml): key, limits and home pose.
-// Angles in degrees; the gripper is 0-100 % open. Limits and start (home) match armctl's config/arm.yaml
-// (shoulder_lift's -13.65 rounded to -14); tools/arm_bridge.py replaces them with the real pose.
-struct ArmJoint {
-  const char *name, *key;
-  int min, max, start;
-};
-static const ArmJoint JOINTS[] = {{"Base", "shoulder_pan", -150, 150, 0},    {"Shoulder", "shoulder_lift", -120, -14, -45},
-                                  {"Elbow", "elbow_flex", -10, 135, 90},     {"Wrist", "wrist_flex", -90, 90, 0},
-                                  {"Roll", "wrist_roll", -150, 150, 0},      {"Gripper", "gripper", 0, 100, 50}};
-static const int ARM_N = sizeof(JOINTS) / sizeof(JOINTS[0]), GRIP = ARM_N - 1;
-// Arm layers map to joints by name, so a lineup without some joints (e.g. no Roll) still works.
-static int armJoint(const Mode &m, int layer) {
-  if (layer < 0 || layer >= (int)m.layers.size()) return -1;
-  for (int k = 0; k < ARM_N; k++)
-    if (!strcasecmp(m.layers[layer].name, JOINTS[k].name)) return k;
-  return -1;
-}
 static const char *TYPING_WORDS[] = {"the", "puck", "should", "feel", "like", "a", "third", "hand", "on", "the", "desk"};
 static const int TYPING_WORD_COUNT = sizeof(TYPING_WORDS) / sizeof(TYPING_WORDS[0]);
 
@@ -180,8 +151,6 @@ struct State {
   bool muted = false, on = true, playing = true, running = false;
   float v = 0, left = 0, mpos = 62, len = 243;
   uint32_t touched = 0, flash = 0, pressedAt = 0, start = 0, last = 0;
-  int arm[ARM_N] = {};
-  std::string armStatus;  // from tools/arm_bridge.py, e.g. "armed"; empty until it connects
   float pct = 37;  // printer: simulated job
   int page = 0;
   uint32_t doneAt = 0;
@@ -222,9 +191,6 @@ static uint32_t menuAt = 0;  // last turn in the hold menu; it picks by itself a
 constexpr uint32_t MENU_AUTO_MS = 5000;
 static SendFn sendFn = nullptr;
 static void (*spotifyFn)(const char *action) = nullptr;
-static void (*armMoveFn)(const char *joint, float value) = nullptr;
-static void (*armSetFn)(bool armed) = nullptr;
-static bool (*armLinkedFn)() = nullptr;
 
 static State &stateOf(int idx) {
   State &s = states[idx];
@@ -238,9 +204,6 @@ static State &stateOf(int idx) {
       case MEDIA: s.vol = 40, s.last = nowMs(); break;
       case VALUE: s.v = m.value; break;
       case TIMER: s.min = m.minutes, s.left = m.minutes * 60, s.last = nowMs(); break;
-      case ARM:
-        for (int k = 0; k < ARM_N; k++) s.arm[k] = JOINTS[k].start;
-        break;
       case CLOCKFACE: s.face = m.face < 0 ? 0 : m.face; break;
       case PRINTER: s.last = nowMs(); break;
       case SETTINGS: s.bright = m.brightness; break;
@@ -353,8 +316,6 @@ static void emit(int idx, const Bind &b, const char *input, const char *tool = n
   if (b.act && !strcmp(b.act, "companion.mic_toggle") && muteKey(callApp)) ble::send("key", muteKey(callApp));
   if (b.act && !strncmp(b.act, "spotify.", 8) && spotifyFn) spotifyFn(b.act + 8);  // no-op unless linked
   if (b.act && !strncmp(b.act, "usb.", 4)) ble::send(b.act + 4, b.arg);               // volume, keys, scroll over Bluetooth
-  if (b.act && armSetFn && (!strcmp(b.act, "robotarm.arm") || !strcmp(b.act, "robotarm.disarm")))
-    armSetFn(!strcmp(b.act, "robotarm.arm"));  // Safety layer; no-op unless the arm is linked
   if (!b.act || !strcmp(b.act, "puck.none") || !sendFn) return;
   Mode &m = modes[idx];
   State &s = stateOf(idx);
@@ -367,15 +328,9 @@ static void emit(int idx, const Bind &b, const char *input, const char *tool = n
   if (b.arg) doc["arg"] = b.arg;
   if (!strcmp(b.act, "puck.cycle")) {
     doc["layer"] = m.layers[s.layer].name;
-  } else if (m.tpl == ARM && armJoint(m, s.layer) >= 0) {
-    int k = armJoint(m, s.layer);
-    doc["joint"] = JOINTS[k].key;
-    doc["value"] = s.arm[k];
-    if (armMoveFn && !strncmp(input, "turn", 4)) armMoveFn(JOINTS[k].key, s.arm[k]);
   } else if (m.tpl == CLOCKFACE) {
     doc["face"] = FACES[s.face].name;
   }
-  if (m.tpl == ARM && armLinkedFn && armLinkedFn()) doc["direct"] = true;  // the puck drives the arm itself
   sendFn(doc);
 }
 
@@ -620,55 +575,6 @@ static void drawTimer(Mode &m, State &s) {
         s.running ? m.color : DIM);
   pressLabel(m, pl, sizeof pl);
   label(pl, C + 128, 14, DIM, 240);
-}
-
-static void drawArm(Mode &m, State &s) {
-  int base = s.arm[0], sh = s.arm[1], el = s.arm[2], wr = s.arm[3], gr = s.arm[GRIP], cur = armJoint(m, s.layer);
-  auto col = [&](int i) { return i == cur ? m.color : WHITE; };
-  arc(192, 4, 0, 360, FAINT);
-  arc(192, 12, base - 90 - 5, base - 90 + 5, cur == 0 ? m.color : DIM);
-  char buf[48];
-  snprintf(buf, sizeof buf, "%s - %s", m.name, s.armStatus.empty() ? m.host : s.armStatus.c_str());
-  label(buf, 96, 15, DIM, 230);
-  if (cur < 0 && !strcasecmp(m.layers[s.layer].name, "Safety")) {
-    bool live = s.armStatus == "armed";
-    label("Safety", 124, 20, m.color);
-    label(live ? "Armed" : s.armStatus.empty() ? "Not linked" : "Disarmed", 160, 34, live ? m.color : WHITE);
-    label(live ? "Turn left to disarm" : "Turn right to arm", 196, 16, DIM, 220);
-  }
-  if (cur >= 0) {
-    label(JOINTS[cur].name, 124, 20, m.color);
-    if (cur == GRIP) snprintf(buf, sizeof buf, "%d%%", gr);
-    else snprintf(buf, sizeof buf, "%d", s.arm[cur]);
-    label(buf, 160, 38, WHITE);
-  }
-  if (cur >= 0 && cur != GRIP) {  // degree sign (not in the built-in font)
-    float w = textWidth(buf, 38);
-    ring(C + w / 2 + 8, 146, 4, 2.5f, WHITE, 0, false);
-  }
-  // Side view: shoulder, elbow, wrist, gripper.
-  const float ox = C - 34, oy = C + 100, L1 = 80, L2 = 66, L3 = 22;
-  auto rad = [](float d) { return d * (float)M_PI / 180; };
-  float a1 = -(sh + 90), a2 = a1 + el, a3 = a2 + wr;
-  float p1x = ox + L1 * cosf(rad(a1)), p1y = oy + L1 * sinf(rad(a1));
-  float p2x = p1x + L2 * cosf(rad(a2)), p2y = p1y + L2 * sinf(rad(a2));
-  float p3x = p2x + L3 * cosf(rad(a3)), p3y = p2y + L3 * sinf(rad(a3));
-  rect(ox - 22, oy + 4, 44, 8, cur == 0 ? m.color : DIM);
-  line(ox, oy + 4, ox, oy, 8, cur == 0 ? m.color : DIM);
-  line(ox, oy, p1x, p1y, 9, col(1));
-  line(p1x, p1y, p2x, p2y, 7, col(2));
-  line(p2x, p2y, p3x, p3y, 5, cur == 4 ? m.color : col(3));
-  float jaw = 4 + gr / 10.0f, nx = cosf(rad(a3 + 90)), ny = sinf(rad(a3 + 90)), fx = cosf(rad(a3)), fy = sinf(rad(a3));
-  for (int sgn : {1, -1}) {
-    float bx = p3x + nx * jaw * sgn, by = p3y + ny * jaw * sgn;
-    line(bx, by, bx + fx * 14, by + fy * 14, 4, col(GRIP));
-  }
-  float jp[3][2] = {{ox, oy}, {p1x, p1y}, {p2x, p2y}};
-  for (int k = 0; k < 3; k++) {
-    int i = k + 1;
-    ring(jp[k][0], jp[k][1], 5, 2, col(i), (i - 1 == cur || i == cur) ? m.color : BLACK, true);
-  }
-  dots(m.layers.size(), s.layer, C + 132);
 }
 
 static void drawClockFace(Mode &m, State &s) {
@@ -1381,13 +1287,6 @@ void rotate(int d) {
     case TIMER:
       if (!s.running) s.min = clampf(s.min + d, 1, 120), s.left = s.min * 60;
       break;
-    case ARM: {
-      int k = armJoint(m, s.layer);
-      if (k < 0) break;
-      int step = k == GRIP ? 5 : m.step;
-      s.arm[k] = clampf(s.arm[k] + d * step, JOINTS[k].min, JOINTS[k].max), s.touched = nowMs();
-      break;
-    }
     case CLOCKFACE: s.face = ((s.face + d) % FACE_COUNT + FACE_COUNT) % FACE_COUNT, s.touched = nowMs(); break;
     case PRINTER: s.page = ((s.page + d) % 3 + 3) % 3; break;
   }
@@ -1546,17 +1445,6 @@ void host(JsonObjectConst msg) {
   } else if (!strcmp(t, "mic")) {
     int idx = modeIndex("calls");
     if (idx >= 0) stateOf(idx).muted = msg["muted"] | true;
-  } else if (!strcmp(t, "arm")) {
-    // {"t":"arm","joints":{"shoulder_pan":0,...},"status":"armed"} from tools/arm_bridge.py
-    int idx = modeIndex("arm");
-    if (idx < 0) return;
-    State &s = stateOf(idx);
-    if (msg["status"].is<const char *>()) s.armStatus = msg["status"].as<const char *>();
-    if (recent(s.touched, 1500)) return;  // the knob was just turned; don't fight it
-    JsonObjectConst joints = msg["joints"];
-    for (int k = 0; k < ARM_N; k++)
-      if (joints[JOINTS[k].key].is<float>())
-        s.arm[k] = clampf(lroundf(joints[JOINTS[k].key].as<float>()), JOINTS[k].min, JOINTS[k].max);
   } else if (!strcmp(t, "sidekick")) {
     for (size_t k = 0; k < modes.size(); k++)
       if (modes[k].tpl == SIDEKICK) {
@@ -1709,17 +1597,10 @@ const char *timeZone() { return tzPosix; }
 // Strings in modes loaded at runtime point into this document, so it lives as long as they do.
 static std::unique_ptr<JsonDocument> modeStore;
 
-// The arm screen always starts on a Safety layer: turn right to arm, left to disarm.
-static void addSafetyLayer(Mode &m) {
-  for (auto &l : m.layers)
-    if (!strcasecmp(l.name, "Safety")) return;
-  m.layers.insert(m.layers.begin(), {"Safety", B("robotarm.disarm"), B("robotarm.arm")});
-}
-
 static bool tplFromName(const char *name, Tpl &out) {
   static const struct { const char *name; Tpl tpl; } names[] = {
       {"idle", IDLE},   {"calls", CALLS}, {"typing", TYPING}, {"media", MEDIA}, {"editing", EDITING},
-      {"value", VALUE}, {"list", LIST},   {"timer", TIMER},   {"arm", ARM},     {"clock", CLOCKFACE}, {"printer", PRINTER}, {"settings", SETTINGS}, {"sidekick", SIDEKICK}};
+      {"value", VALUE}, {"list", LIST},   {"timer", TIMER},   {"clock", CLOCKFACE}, {"printer", PRINTER}, {"settings", SETTINGS}, {"sidekick", SIDEKICK}};
   for (auto &n : names)
     if (!strcmp(n.name, name)) return out = n.tpl, true;
   return false;
@@ -1755,13 +1636,12 @@ bool applyModes(std::unique_ptr<JsonDocument> doc, JsonDocument &reply) {
     for (const char *t : o["triggers"].as<JsonArrayConst>()) m.triggers.push_back(t);
     for (JsonObjectConst l : o["layers"].as<JsonArrayConst>())
       m.layers.push_back({l["name"] | "", bindFrom(l["left"]), bindFrom(l["right"])});
-    if (m.tpl == ARM) addSafetyLayer(m);
     if (m.layers.empty()) m.layers.push_back({"", B("puck.none"), B("puck.none")});
     m.press = bindFrom(o["press"]);
     JsonObjectConst st = o["settings"];
     m.min = st["min"] | m.min, m.max = st["max"] | m.max, m.step = st["step"] | m.step;
     m.value = st["value"] | m.value, m.minutes = st["minutes"] | m.minutes, m.face = st["face"] | m.face;
-    m.unit = st["unit"] | m.unit, m.host = st["host"] | m.host;
+    m.unit = st["unit"] | m.unit;
     m.printer = st["printer"] | m.printer, m.file = st["file"] | m.file;
     m.hours = st["hours"] | m.hours, m.totalLayers = st["layers"] | m.totalLayers;
     m.brightness = st["brightness"] | m.brightness;
@@ -2073,9 +1953,6 @@ static void drawSettings(Mode &m, State &s) {
 
 void setBacklight(void (*fn)(int pct)) { backlightFn = fn; }
 void setSpotifyControl(void (*fn)(const char *action)) { spotifyFn = fn; }
-void setArmControl(void (*move)(const char *joint, float value), void (*setArmed)(bool armed), bool (*linked)()) {
-  armMoveFn = move, armSetFn = setArmed, armLinkedFn = linked;
-}
 bool mediaOnScreen() { return !menuOpen && modes[current].tpl == MEDIA; }
 void setFirmwareVersion(const char *v) { fwVersion = v; }
 
@@ -2119,7 +1996,6 @@ void draw(lv_layer_t *layer) {
     case VALUE: drawValue(m, s); break;
     case LIST: drawList(m, s); break;
     case TIMER: drawTimer(m, s); break;
-    case ARM: drawArm(m, s); break;
     case CLOCKFACE: drawClockFace(m, s); break;
     case PRINTER: drawPrinter(m, s); break;
     case SIDEKICK: drawSidekick(m, s); break;

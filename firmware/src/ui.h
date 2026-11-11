@@ -30,9 +30,6 @@ void loadPrefs();
 void resetModes();
 // Forwards "spotify.*" actions (play_pause, next, prev, vol_up, vol_down) to the Spotify module.
 void setSpotifyControl(void (*fn)(const char *action));
-// Robot arm over Wi-Fi (arm.h): joint moves and Safety-layer arm/disarm go straight to the arm when
-// `linked()` says a login is saved; the events still go to the computer, marked "direct".
-void setArmControl(void (*move)(const char *joint, float value), void (*setArmed)(bool armed), bool (*linked)());
 // True while the Media screen is showing (Spotify polls faster then).
 bool mediaOnScreen();
 // A touch gesture (touch.h): swipe left = next track, right = previous, on the Media screen.
