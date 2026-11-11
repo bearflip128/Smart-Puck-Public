@@ -1,6 +1,5 @@
 #include "printer.h"
 
-#include "arm.h"
 #include "ble.h"
 #include "evlog.h"
 #include "net.h"
@@ -162,7 +161,6 @@ static void statusJson(JsonDocument &doc) {
   net::describe(doc);
   spotify::describe(doc);
   doc["printer"] = (const char *)state;
-  arm::describe(doc);
   doc["ble_connected"] = ble::connectedCount();
   doc["uptime_s"] = millis() / 1000;
   doc["heap_free"] = ESP.getFreeHeap();
@@ -246,21 +244,6 @@ static void handleCtx() {
   server.send(200, "text/plain", "ok");
 }
 
-// tools/arm_link.py --wifi posts the armctl login here (the same {"t":"armnet",...} as over USB),
-// with the puck's update password as "key" so nobody else on the network can change it.
-static void handleArmLink() {
-  JsonDocument doc;
-  if (deserializeJson(doc, server.arg("plain"))) return server.send(400, "text/plain", "bad JSON");
-  if (strcmp(doc["key"] | "", OTA_PASSWORD)) {
-    evlog::add("arm link refused: wrong key");
-    return server.send(403, "text/plain", "wrong key");
-  }
-  doc.remove("key");
-  arm::handleHost(doc.as<JsonObjectConst>());
-  evlog::add("arm link %s from Wi-Fi", (doc["clear"] | false) ? "cleared" : "saved");
-  server.send(200, "text/plain", "ok");
-}
-
 static void handleNames() {
   for (int i = 0; i < ble::bondCount(); i++)
     if (server.hasArg("n" + String(i))) ble::setBondName(i, server.arg("n" + String(i)).c_str());
@@ -295,7 +278,6 @@ void begin() {
   server.on("/ctx", HTTP_POST, handleCtx);
   server.on("/status", HTTP_GET, handleStatus);
   server.on("/log", HTTP_GET, handleLog);
-  server.on("/armlink", HTTP_POST, handleArmLink);
   xTaskCreatePinnedToCore(mqttTask, "printer", 12 * 1024, nullptr, 1, nullptr, 0);
 }
 

@@ -12,8 +12,6 @@
 //                     {"t":"modes_reset"} (back to the built-in modes),
 //                     {"t":"wifi"} (status), {"t":"wifi_reset"} (forget Wi-Fi, open the setup network),
 //                     {"t":"time","utc":<Unix seconds>} (or "epoch" as local time, from older tools)
-//                     {"t":"armnet","url":...,"lan":...,"user":...,"pass":...} (robot arm over Wi-Fi, arm.h;
-//                     {"clear":true} forgets it), answered with {"evt":"armnet","msg":"..."}
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -33,7 +31,6 @@
 #include "ota.h"
 #include "printer.h"
 #include "spotify.h"
-#include "arm.h"
 #include "touch.h"
 #include "ui.h"
 
@@ -177,7 +174,6 @@ void sendHello() {
   doc["modes_version"] = lineupVersion;  // 0 = built-in modes
   net::describe(doc);
   printer::describe(doc);
-  arm::describe(doc);
   doc["touch"] = touch::status();
   send(doc);
 }
@@ -286,8 +282,6 @@ bool pollHost() {
         leds::setEnabled(doc["on"] | true);  // {"t":"leds","on":false} turns the glow off
       } else if (!strcmp(t, "spotify")) {
         spotify::handleHost(doc.as<JsonObjectConst>());
-      } else if (!strcmp(t, "armnet")) {
-        arm::handleHost(doc.as<JsonObjectConst>());
       } else if (!strcmp(t, "hello")) {
         sendHello();
       } else {
@@ -370,7 +364,7 @@ void setupDisplay() {
 
 // ---------------------------------------------------------------- main
 
-// TLS (Spotify, the printer, the arm) keeps its buffers in PSRAM. The framework puts them in
+// TLS (Spotify, the printer) keeps its buffers in PSRAM. The framework puts them in
 // internal RAM, and three connections next to Wi-Fi, Bluetooth and the screen ran it out
 // ("SSL - Memory allocation failed"), so Spotify never connected.
 static void *tlsCalloc(size_t n, size_t size) {
@@ -416,8 +410,6 @@ void setup() {
   printer::begin();
   ui::setSpotifyControl(spotify::control);
   spotify::begin();
-  ui::setArmControl(arm::moveJoint, arm::setArmed, arm::linked);
-  arm::begin();
   ota::begin(showUpdate);
   sendHello();
 }
@@ -468,12 +460,6 @@ void loop() {
     ui::host(spotifyEvt.as<JsonObjectConst>());
     changed = true;
   }
-  JsonDocument armMsg, armEvt;
-  if (arm::poll(armMsg)) {
-    ui::host(armMsg.as<JsonObjectConst>());
-    changed = true;
-  }
-  if (arm::pollEvent(armEvt)) send(armEvt);
   JsonDocument printerMsg;
   if (printer::poll(printerMsg)) {
     ui::host(printerMsg.as<JsonObjectConst>());

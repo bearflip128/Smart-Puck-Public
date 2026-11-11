@@ -11,6 +11,7 @@ A two-part printed case: a **tub** that holds the battery, charge board and powe
 | `stl/puck_tub.stl` | Bottom half. Battery strips, charge-board rails, USB-C slot, rocker notch, screw counterbores and foot recesses. |
 | `stl/puck_lid.stl` | Top half. 46.2 mm knob pocket, 18 mm deep, tilted 7.5° toward you, with a D-shaped cord opening. |
 | `stl/fit_test_knob_hole_46.0-46.6.stl` | Small plate with four holes (46.0, 46.2, 46.4 and 46.6 mm, marked with 1 to 4 dots) to check the knob's press fit on your printer before printing the lid. |
+| `Smart-Puck-Final-Fall-26.3mf` | Ready-to-print Bambu Studio project for the A1 mini: the tub and lid on two plates, 0.12 mm layers, 4 walls, 40% gyroid infill. Open it in Bambu Studio, check the filament and printer profiles, and slice. |
 | `source/shell_model.py` | Parametric Python generator for the case. Every dimension is a named parameter at the top. |
 
 ## Printing

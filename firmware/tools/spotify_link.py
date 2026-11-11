@@ -10,7 +10,7 @@ Before running: create a Spotify app at https://developer.spotify.com/dashboard
 
 Usage:  python spotify_link.py CLIENT_ID [PORT]   (PORT defaults to COM5; on Mac/Linux pass /dev/tty...)
 Opens your browser to sign in, checks what's playing, then sends the link to the puck
-over USB. Close anything else holding the port first (arm_bridge.py, puck_monitor.py).
+over USB. Close anything else holding the port first (such as puck_monitor.py).
 Needs: pip install pyserial
 """
 import base64
