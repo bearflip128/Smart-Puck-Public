@@ -19,7 +19,7 @@ A two-part printed case: a **tub** that holds the battery, charge board and powe
 | | Tub | Lid |
 |---|---|---|
 | Orientation | Floor down, as exported | Flat split face down, as exported |
-| Supports | None | None |
+| Supports | Tree (auto), everywhere | Tree (auto), everywhere |
 | Material | PLA+ (grey on the reference build) | PLA+ (black on the reference build) |
 | Suggested settings | 0.2 mm layers, 3 walls, 15–20% infill | 0.2 mm layers, 3 walls, 15–20% infill |
 
